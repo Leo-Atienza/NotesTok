@@ -158,3 +158,77 @@
 .animate-shake {
   animation: shake 0.5s ease-in-out;
 }
+
+/* Segment transition — fade + slide up on content swap */
+@keyframes segment-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-segment-enter {
+  animation: segment-enter 0.4s ease-out;
+}
+
+/* Generic fade-in */
+@keyframes fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Skeleton shimmer loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.97 0 0) 25%,
+    oklch(0.92 0 0) 50%,
+    oklch(0.97 0 0) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Pulse glow for active states */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.55 0.2 260 / 0.4); }
+  50% { box-shadow: 0 0 0 8px oklch(0.55 0.2 260 / 0); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 1.5s infinite;
+}
+
+/* Celebration bounce for correct answer */
+@keyframes celebrate {
+  0% { transform: scale(0.95); }
+  40% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.animate-celebrate {
+  animation: celebrate 0.6s ease-out;
+}
+
+/* Step pulse for loading indicators */
+@keyframes step-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.animate-step-pulse {
+  animation: step-pulse 2s ease-in-out infinite;
+}

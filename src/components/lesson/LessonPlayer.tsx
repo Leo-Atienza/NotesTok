@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLessonPlayer } from "@/hooks/useLessonPlayer";
 import { StopAndSolve } from "@/components/quiz/StopAndSolve";
 import { XPCounter } from "@/components/gamification/XPCounter";
@@ -19,6 +19,11 @@ import {
   Trophy,
   ArrowRight,
   RotateCcw,
+  Share2,
+  CheckCircle2,
+  Zap,
+  Clock,
+  SkipForward,
 } from "lucide-react";
 import { speak, cancelSpeech, pauseSpeech, resumeSpeech } from "@/lib/tts";
 import type { LessonManifest } from "@/lib/types";
@@ -37,6 +42,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   const [scholarContents, setScholarContents] = useState<
     Record<string, string>
   >({});
+  const [scholarFailed, setScholarFailed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
 
@@ -51,7 +58,11 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
 
   // Handle TTS narration
   useEffect(() => {
-    if (player.playerState === "playing" && player.currentSegment && !isMuted) {
+    if (
+      player.playerState === "playing" &&
+      player.currentSegment &&
+      !isMuted
+    ) {
       const content =
         player.panicExplanation ||
         (player.isScholarMode && scholarContents[player.currentSegment.id]
@@ -109,6 +120,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
       player.currentSegment &&
       !scholarContents[player.currentSegment.id]
     ) {
+      setScholarFailed(false);
       const segment = player.currentSegment;
       fetch("/api/simplify", {
         method: "POST",
@@ -127,7 +139,9 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             }));
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          setScholarFailed(true);
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.isScholarMode, player.currentSegment?.id]);
@@ -156,27 +170,79 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     player.onNarrationEnd();
   };
 
+  const handleShareResults = () => {
+    const text = `I just completed "${manifest.title}" on NotesTok and earned ${player.xp} XP across ${player.totalSegments} segments! Built with AI-powered active recall.`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   const progressPercent =
     ((player.currentSegmentIndex + 1) / player.totalSegments) * 100;
 
   // Completion screen
   if (player.playerState === "completed") {
+    const personaCallout = player.usedScholarMode
+      ? "Global Scholar mode simplified content for your learning style"
+      : player.usedPanicButton
+        ? "The AI adapted explanations to match your understanding"
+        : "Your brain just leveled up through active recall";
+
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background to-muted">
-        <div className="text-center space-y-6 max-w-md">
-          <div className="w-20 h-20 mx-auto bg-yellow-400/20 rounded-full flex items-center justify-center">
+        <div className="text-center space-y-8 max-w-md animate-fade-in">
+          {/* Trophy */}
+          <div className="w-20 h-20 mx-auto bg-yellow-400/20 rounded-full flex items-center justify-center animate-celebrate animate-pulse-glow">
             <Trophy className="w-10 h-10 text-yellow-500" />
           </div>
+
           <h2 className="text-3xl font-bold">Lesson Complete!</h2>
-          <p className="text-muted-foreground">
-            You earned{" "}
-            <span className="text-yellow-600 font-bold">{player.xp} XP</span>{" "}
-            across {player.totalSegments} segments
-          </p>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-xl bg-card border text-center">
+              <CheckCircle2 className="w-5 h-5 mx-auto mb-1 text-green-500" />
+              <p className="text-lg font-bold">{player.totalSegments}</p>
+              <p className="text-xs text-muted-foreground">Segments</p>
+            </div>
+            <div className="p-3 rounded-xl bg-card border text-center">
+              <Zap className="w-5 h-5 mx-auto mb-1 text-yellow-500" />
+              <p className="text-lg font-bold">{player.xp}</p>
+              <p className="text-xs text-muted-foreground">XP Earned</p>
+            </div>
+            <div className="p-3 rounded-xl bg-card border text-center">
+              <Clock className="w-5 h-5 mx-auto mb-1 text-blue-500" />
+              <p className="text-lg font-bold">
+                ~{manifest.estimatedMinutes}
+              </p>
+              <p className="text-xs text-muted-foreground">Minutes</p>
+            </div>
+          </div>
+
+          {/* Persona callout */}
+          <div className="p-3 rounded-lg bg-primary/5 border border-primary/10">
+            <p className="text-sm text-muted-foreground">{personaCallout}</p>
+          </div>
+
+          {/* Actions */}
           <div className="flex gap-3 justify-center">
             <Button variant="outline" onClick={onRestart}>
               <RotateCcw className="w-4 h-4 mr-2" />
               New Lesson
+            </Button>
+            <Button onClick={handleShareResults}>
+              {copied ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share Results
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -218,8 +284,11 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      {/* Main content — key forces remount + animation on segment change */}
+      <div
+        key={player.currentSegmentIndex}
+        className="max-w-2xl mx-auto px-4 py-8 animate-segment-enter"
+      >
         {/* Segment header */}
         <div className="flex items-center gap-3 mb-6">
           <span className="text-4xl">{player.currentSegment.emoji}</span>
@@ -242,6 +311,14 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             >
               <Lightbulb className="w-3 h-3 mr-1" />
               Simplified Explanation
+            </Badge>
+          )}
+          {player.isScholarMode && scholarFailed && (
+            <Badge
+              variant="outline"
+              className="mb-3 text-muted-foreground border-muted"
+            >
+              Simplification unavailable — showing original
             </Badge>
           )}
           <p className="text-lg leading-relaxed whitespace-pre-line">
@@ -282,11 +359,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               )}
             </Button>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleMuteToggle}
-            >
+            <Button variant="ghost" size="icon" onClick={handleMuteToggle}>
               {isMuted ? (
                 <VolumeX className="w-4 h-4" />
               ) : (
@@ -321,11 +394,25 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               </Button>
             )}
 
-            {/* Skip narration */}
-            {isMuted && player.playerState === "playing" && (
-              <Button variant="outline" size="sm" onClick={handleSkipNarration}>
-                Next
-                <ArrowRight className="w-3 h-3 ml-1" />
+            {/* Skip / Next — always visible during playback */}
+            {player.playerState === "playing" && (
+              <Button
+                variant={isMuted ? "outline" : "ghost"}
+                size="sm"
+                onClick={handleSkipNarration}
+                className={isMuted ? "" : "text-muted-foreground"}
+              >
+                {isMuted ? (
+                  <>
+                    Next
+                    <ArrowRight className="w-3 h-3 ml-1" />
+                  </>
+                ) : (
+                  <>
+                    <SkipForward className="w-3 h-3 mr-1" />
+                    Skip
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -340,6 +427,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
           showingHint={player.showingHint}
           showingExplanation={player.showingExplanation}
           selectedAnswer={player.selectedAnswer}
+          panicExplanation={player.panicExplanation}
           onAnswer={player.submitQuizAnswer}
           onContinue={player.nextSegment}
           onPanic={player.triggerPanic}
@@ -355,6 +443,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             showingHint={false}
             showingExplanation={true}
             selectedAnswer={player.selectedAnswer}
+            panicExplanation={null}
             onAnswer={() => {}}
             onContinue={player.nextSegment}
             onPanic={() => {}}
@@ -373,7 +462,6 @@ function renderContentWithKeyTerms(
 ): React.ReactNode {
   if (!keyTerms.length) return content;
 
-  // Bold key terms in the content
   const regex = new RegExp(
     `(${keyTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
     "gi"
@@ -385,7 +473,10 @@ function renderContentWithKeyTerms(
       (t) => t.toLowerCase() === part.toLowerCase()
     );
     return isKeyTerm ? (
-      <strong key={i} className="text-primary font-semibold underline decoration-primary/30 underline-offset-2">
+      <strong
+        key={i}
+        className="text-primary font-semibold underline decoration-primary/30 underline-offset-2"
+      >
         {part}
       </strong>
     ) : (

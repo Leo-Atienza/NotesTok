@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Lightbulb,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import type { QuizCheckpoint } from "@/lib/types";
 
@@ -18,6 +19,7 @@ interface StopAndSolveProps {
   showingHint: boolean;
   showingExplanation: boolean;
   selectedAnswer: number | null;
+  panicExplanation: string | null;
   onAnswer: (index: number) => void;
   onContinue: () => void;
   onPanic: () => void;
@@ -29,11 +31,14 @@ export function StopAndSolve({
   showingHint,
   showingExplanation,
   selectedAnswer,
+  panicExplanation,
   onAnswer,
   onContinue,
   onPanic,
 }: StopAndSolveProps) {
   const [animatingWrong, setAnimatingWrong] = useState(false);
+  const [lastWrongIndex, setLastWrongIndex] = useState<number | null>(null);
+  const [isPanicking, setIsPanicking] = useState(false);
   const isCorrect = selectedAnswer === quiz.correctIndex;
   const isAnswered = selectedAnswer !== null && isCorrect;
 
@@ -42,14 +47,25 @@ export function StopAndSolve({
 
     if (index !== quiz.correctIndex) {
       setAnimatingWrong(true);
+      setLastWrongIndex(index);
       setTimeout(() => setAnimatingWrong(false), 600);
     }
     onAnswer(index);
   };
 
+  const handlePanic = () => {
+    setIsPanicking(true);
+    onPanic();
+    // isPanicking will remain true — the panic explanation will show inline
+  };
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg p-6 space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <Card
+        className={`w-full max-w-lg p-6 space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
+          isAnswered ? "ring-2 ring-green-500/30 animate-celebrate" : ""
+        }`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between">
           <Badge variant="secondary" className="text-sm font-semibold">
@@ -62,6 +78,21 @@ export function StopAndSolve({
 
         {/* Question */}
         <h3 className="text-lg font-semibold leading-snug">{quiz.question}</h3>
+
+        {/* Panic explanation (inline, shown when triggered from quiz) */}
+        {panicExplanation && (
+          <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg animate-fade-in">
+            <Lightbulb className="w-4 h-4 mt-0.5 text-yellow-600 shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-yellow-700 mb-1">
+                Simpler Explanation
+              </p>
+              <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                {panicExplanation}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Options */}
         <div className="space-y-2">
@@ -77,10 +108,18 @@ export function StopAndSolve({
                 variant = "destructive";
               }
             } else if (
+              animatingWrong &&
+              lastWrongIndex === index
+            ) {
+              // Use local animatingWrong state as source of truth for shake
+              className += " animate-shake border-red-400";
+            } else if (
+              !animatingWrong &&
               selectedAnswer === index &&
               selectedAnswer !== quiz.correctIndex
             ) {
-              className += " animate-shake border-red-400";
+              // Show red border on previous wrong answer (no shake)
+              className += " border-red-300";
             }
 
             return (
@@ -126,18 +165,22 @@ export function StopAndSolve({
           </div>
         )}
 
-        {/* Correct answer feedback */}
+        {/* Correct answer feedback with celebration */}
         {isAnswered && (
-          <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg animate-in fade-in duration-300">
-            <CheckCircle2 className="w-5 h-5 mt-0.5 text-green-600 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-green-800 dark:text-green-300">
-                Correct! +{quiz.xpReward} XP
-              </p>
-              <p className="text-sm text-green-700 dark:text-green-400 mt-1">
-                {quiz.explanation}
-              </p>
+          <div className="relative">
+            <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg animate-celebrate">
+              <CheckCircle2 className="w-5 h-5 mt-0.5 text-green-600 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-green-800 dark:text-green-300">
+                  Correct! +{quiz.xpReward} XP
+                </p>
+                <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                  {quiz.explanation}
+                </p>
+              </div>
             </div>
+            {/* Confetti dots */}
+            <ConfettiDots />
           </div>
         )}
 
@@ -145,10 +188,17 @@ export function StopAndSolve({
         <div className="flex justify-between items-center pt-2">
           {/* Panic button appears after 2+ wrong answers */}
           {attempts >= 2 && !isAnswered ? (
-            <Button variant="ghost" size="sm" onClick={onPanic}>
-              <Lightbulb className="w-4 h-4 mr-1" />
-              Explain It Simpler
-            </Button>
+            isPanicking && !panicExplanation ? (
+              <Button variant="ghost" size="sm" disabled>
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                Simplifying...
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={handlePanic}>
+                <Lightbulb className="w-4 h-4 mr-1" />
+                Explain It Simpler
+              </Button>
+            )
           ) : (
             <div />
           )}
@@ -162,5 +212,40 @@ export function StopAndSolve({
         </div>
       </Card>
     </div>
+  );
+}
+
+function ConfettiDots() {
+  const colors = [
+    "bg-green-400",
+    "bg-yellow-400",
+    "bg-primary",
+    "bg-blue-400",
+    "bg-green-500",
+    "bg-amber-400",
+  ];
+  const positions = [
+    { top: "-8px", left: "10%" },
+    { top: "-6px", right: "15%" },
+    { bottom: "-8px", left: "20%" },
+    { bottom: "-6px", right: "10%" },
+    { top: "50%", left: "-8px" },
+    { top: "40%", right: "-8px" },
+  ];
+
+  return (
+    <>
+      {colors.map((color, i) => (
+        <span
+          key={i}
+          className={`absolute w-2 h-2 rounded-full ${color} animate-celebrate`}
+          style={{
+            ...positions[i],
+            animationDelay: `${i * 80}ms`,
+            opacity: 0.8,
+          }}
+        />
+      ))}
+    </>
   );
 }

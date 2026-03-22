@@ -14,6 +14,8 @@ interface LessonPlayerState {
   showingHint: boolean;
   showingExplanation: boolean;
   selectedAnswer: number | null;
+  usedScholarMode: boolean;
+  usedPanicButton: boolean;
 }
 
 export function useLessonPlayer() {
@@ -28,6 +30,8 @@ export function useLessonPlayer() {
     showingHint: false,
     showingExplanation: false,
     selectedAnswer: null,
+    usedScholarMode: false,
+    usedPanicButton: false,
   });
 
   const currentSegment: Segment | null =
@@ -47,6 +51,8 @@ export function useLessonPlayer() {
       showingHint: false,
       showingExplanation: false,
       selectedAnswer: null,
+      usedScholarMode: false,
+      usedPanicButton: false,
     });
   }, []);
 
@@ -133,7 +139,13 @@ export function useLessonPlayer() {
     const segment = state.manifest?.segments[state.currentSegmentIndex];
     if (!segment) return;
 
-    setState((prev) => ({ ...prev, playerState: "panic-loading" }));
+    const wasInQuiz = state.playerState === "quiz-active";
+
+    setState((prev) => ({
+      ...prev,
+      playerState: "panic-loading",
+      usedPanicButton: true,
+    }));
 
     try {
       const res = await fetch("/api/panic", {
@@ -150,16 +162,24 @@ export function useLessonPlayer() {
       const data = await res.json();
       setState((prev) => ({
         ...prev,
-        playerState: "playing",
+        // Return to quiz if that's where panic was triggered from
+        playerState: wasInQuiz ? "quiz-active" : "playing",
         panicExplanation: data.simplerExplanation,
       }));
     } catch {
-      setState((prev) => ({ ...prev, playerState: "playing" }));
+      setState((prev) => ({
+        ...prev,
+        playerState: wasInQuiz ? "quiz-active" : "playing",
+      }));
     }
-  }, [state.manifest, state.currentSegmentIndex]);
+  }, [state.manifest, state.currentSegmentIndex, state.playerState]);
 
   const toggleScholar = useCallback(() => {
-    setState((prev) => ({ ...prev, isScholarMode: !prev.isScholarMode }));
+    setState((prev) => ({
+      ...prev,
+      isScholarMode: !prev.isScholarMode,
+      usedScholarMode: true,
+    }));
   }, []);
 
   const togglePause = useCallback(() => {
