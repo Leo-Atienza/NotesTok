@@ -1,6 +1,8 @@
 {
-  "name": "notestok-temp",
-  "version": "0.1.0",
+  "name": "notestok",
+  "version": "1.0.0",
+  "description": "AI-powered study companion that transforms notes into interactive micro-lessons with forced active recall. Built with Google Gemini for Build With AI 2026.",
+  "author": "Leo Atienza",
   "private": true,
   "scripts": {
     "dev": "next dev",
