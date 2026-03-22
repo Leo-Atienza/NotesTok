@@ -93,15 +93,15 @@ The entire stack uses the **Google ecosystem**, aligning with the competition sp
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Client (Next.js)                  │
+│                    Client (Next.js)                 │
 │  ┌──────────┐  ┌──────────────┐  ┌───────────────┐  │
 │  │ Upload   │  │ Lesson       │  │ Stop & Solve  │  │
 │  │ Zone     │──│ Player       │──│ Quiz Gate     │  │
 │  └──────────┘  └──────────────┘  └───────────────┘  │
-│        │              │                │             │
-│        │         TTS Engine       XP Counter         │
-│        │        (Web Speech)     (Gamification)      │
-└────────┼──────────────┼────────────────┼─────────────┘
+│        │              │                │            │
+│        │         TTS Engine       XP Counter        │
+│        │        (Web Speech)     (Gamification)     │
+└────────┼──────────────┼────────────────┼────────────┘
          │              │                │
     ┌────▼────┐   ┌─────▼─────┐   ┌─────▼──────┐
     │/api/    │   │/api/      │   │/api/       │
