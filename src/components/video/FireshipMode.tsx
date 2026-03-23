@@ -9,7 +9,7 @@ import {
   spring,
 } from "remotion";
 import { AnimatedCaptions } from "./AnimatedCaptions";
-import { generateCaptionData } from "./CaptionEngine";
+import { generateSceneData } from "./CaptionEngine";
 import type { Segment } from "@/lib/types";
 
 interface FireshipModeProps {
@@ -20,34 +20,10 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  const content = segment.content;
-  const captions = generateCaptionData(content);
+  const scenes = generateSceneData(segment.content);
   const hasImage = !!segment.imageUrl;
 
-  // --- Entry/exit animation ---
-  const entryScale =
-    frame < 8
-      ? interpolate(frame, [0, 8], [1.05, 1], { extrapolateRight: "clamp" })
-      : 1;
-  const entryOpacity =
-    frame < 8
-      ? interpolate(frame, [0, 8], [0, 1], { extrapolateRight: "clamp" })
-      : 1;
-  const exitStart = durationInFrames - 8;
-  const exitOpacity =
-    frame > exitStart
-      ? interpolate(frame, [exitStart, durationInFrames], [1, 0], {
-          extrapolateRight: "clamp",
-        })
-      : 1;
-  const exitScale =
-    frame > exitStart
-      ? interpolate(frame, [exitStart, durationInFrames], [1, 0.95], {
-          extrapolateRight: "clamp",
-        })
-      : 1;
-
-  // --- Title section (enters, then fades out by frame ~70) ---
+  // --- Title section (enters, then fades by frame ~55) ---
   const emojiScale = spring({
     frame,
     fps,
@@ -61,24 +37,23 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const titleEntryOpacity = interpolate(frame, [5, 18], [0, 1], {
     extrapolateRight: "clamp",
   });
-  const badgeOpacity = interpolate(frame, [20, 35], [0, 1], {
-    extrapolateRight: "clamp",
-  });
-  // Line wipe
-  const lineWidth = interpolate(frame, [30, 48], [0, 100], {
+  const titleExitOpacity = interpolate(frame, [40, 55], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  // Title fades out to make room for content
-  const titleExitOpacity = interpolate(frame, [55, 70], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const titleExitY = interpolate(frame, [55, 70], [0, -60], {
+  const titleExitY = interpolate(frame, [40, 55], [0, -50], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   const titleOpacity = titleEntryOpacity * titleExitOpacity;
+
+  const badgeOpacity = interpolate(frame, [20, 35], [0, 1], {
+    extrapolateRight: "clamp",
+  });
+  const lineWidth = interpolate(frame, [30, 48], [0, 100], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
 
   // --- Animated accent glows ---
   const glow1Top = -100 + Math.sin(frame / 60) * 30;
@@ -86,35 +61,30 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const glow2Bottom = -80 + Math.sin(frame / 50) * 25;
   const glow2Left = -80 + Math.cos(frame / 50) * 15;
 
-  // --- Image card (slides in from right) ---
+  // --- Image card ---
   const imageSlide = spring({
     frame: Math.max(0, frame - 12),
     fps,
     config: { damping: 14, mass: 0.7 },
   });
   const imageX = interpolate(imageSlide, [0, 1], [120, 0]);
-  const imageOpacity = interpolate(imageSlide, [0, 1], [0, 1]);
+  const imageEntryOpacity = interpolate(imageSlide, [0, 1], [0, 1]);
   const imageFloat = Math.sin(frame / 40) * 3;
-  // Image fades after title section to give full focus to captions
-  const imageFadeOpacity =
-    frame > 70
-      ? interpolate(frame, [70, 90], [1, 0.3], {
-          extrapolateLeft: "clamp",
-          extrapolateRight: "clamp",
-        })
-      : 1;
-  // Glowing border pulse
+  // Fade image after title to give focus to captions
+  const imageFadeOpacity = interpolate(frame, [55, 75], [1, 0.2], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
   const borderGlow = 0.15 + 0.1 * Math.sin(frame / 20);
 
   // --- Key terms as left-edge badges ---
-  // Calculate approximate timing for each key term based on content position
+  const currentTimeMs = (frame / fps) * 1000;
   const keyTermTimings = segment.keyTerms.map((term) => {
-    const pos = content.toLowerCase().indexOf(term.toLowerCase());
-    if (pos < 0) return durationInFrames * 0.6; // fallback: appear at 60%
-    const wordsBefore = content.slice(0, pos).split(/\s+/).length;
-    const totalWords = content.split(/\s+/).length;
+    const pos = segment.content.toLowerCase().indexOf(term.toLowerCase());
+    if (pos < 0) return durationInFrames * 0.6;
+    const wordsBefore = segment.content.slice(0, pos).split(/\s+/).length;
+    const totalWords = segment.content.split(/\s+/).length;
     const frac = wordsBefore / totalWords;
-    // Map to frame range (captions start ~after title fades)
     return Math.round(40 + frac * (durationInFrames - 80));
   });
 
@@ -123,18 +93,11 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
     extrapolateRight: "clamp",
   });
 
-  // --- Segment counter ---
-  const counterOpacity = interpolate(frame, [8, 20], [0, 1], {
-    extrapolateRight: "clamp",
-  });
-
   return (
     <AbsoluteFill
       style={{
         background:
           "linear-gradient(160deg, #0d1117 0%, #161b22 40%, #1c2333 100%)",
-        transform: `scale(${entryScale * exitScale})`,
-        opacity: entryOpacity * exitOpacity,
       }}
     >
       {/* Subtle grid pattern */}
@@ -146,7 +109,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         }}
       />
 
-      {/* Animated accent glow — top right (blue) */}
+      {/* Animated accent glows */}
       <div
         style={{
           position: "absolute",
@@ -159,7 +122,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
             "radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)",
         }}
       />
-      {/* Animated accent glow — bottom left (amber) */}
       <div
         style={{
           position: "absolute",
@@ -173,8 +135,8 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         }}
       />
 
-      {/* Title section — slides up and fades out */}
-      <Sequence from={0} durationInFrames={durationInFrames}>
+      {/* Title section — slides up and fades */}
+      {frame < 55 && (
         <div
           style={{
             position: "absolute",
@@ -187,9 +149,9 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
             padding: "0 28px",
             opacity: titleOpacity,
             transform: `translateY(${titleExitY}px)`,
+            zIndex: 5,
           }}
         >
-          {/* Emoji */}
           <span
             style={{
               fontSize: 56,
@@ -201,8 +163,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           >
             {segment.emoji}
           </span>
-
-          {/* Title */}
           <h2
             style={{
               color: "#e6edf3",
@@ -218,8 +178,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           >
             {segment.title}
           </h2>
-
-          {/* Type badge */}
           <span
             style={{
               marginTop: 8,
@@ -247,8 +205,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           >
             {segment.type}
           </span>
-
-          {/* Horizontal line wipe */}
           <div
             style={{
               marginTop: 14,
@@ -261,17 +217,17 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
             }}
           />
         </div>
-      </Sequence>
+      )}
 
-      {/* Image card — slides in from right, floats */}
+      {/* Image card — slides in, floats, fades after title */}
       {hasImage && (
         <div
           style={{
             position: "absolute",
-            top: "25%",
+            top: "20%",
             left: "50%",
             transform: `translateX(calc(-50% + ${imageX}px)) translateY(${imageFloat}px)`,
-            opacity: imageOpacity * imageFadeOpacity,
+            opacity: imageEntryOpacity * imageFadeOpacity,
             width: "65%",
             maxWidth: 700,
             aspectRatio: "16/9",
@@ -292,14 +248,14 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         </div>
       )}
 
-      {/* CapCut-style captions (fireship variant) */}
-      <AnimatedCaptions captions={captions} style="fireship" />
+      {/* Scene-based captions */}
+      <AnimatedCaptions scenes={scenes} style="fireship" />
 
-      {/* Key terms — left-edge vertical badges, staggered entrance */}
+      {/* Key terms — left-edge vertical badges */}
       <div
         style={{
           position: "absolute",
-          left: "4%",
+          left: "3%",
           top: "42%",
           display: "flex",
           flexDirection: "column",
@@ -367,7 +323,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         style={{
           position: "absolute",
           top: "3%",
-          right: "5%",
+          right: "4%",
           padding: "5px 12px",
           borderRadius: 6,
           backgroundColor: "rgba(48,54,61,0.5)",
@@ -375,7 +331,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           fontSize: 12,
           fontWeight: 600,
           fontFamily: "'SF Mono', monospace",
-          opacity: counterOpacity,
         }}
       >
         {segment.order + 1}

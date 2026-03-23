@@ -447,7 +447,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
       {/* Main content area */}
       {videoMode !== "classic" && player.currentSegment ? (
         /* Video mode: Brainrot or Fireship */
-        <div key={player.currentSegmentIndex} className="px-4 py-6 animate-segment-enter">
+        <div key={player.currentSegmentIndex} className="px-2 py-4 max-w-lg mx-auto animate-segment-enter">
           <VideoPlayer
             segment={{
               ...player.currentSegment,

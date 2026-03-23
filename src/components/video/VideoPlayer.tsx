@@ -81,7 +81,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <div
         style={{
           width: "100%",
-          maxWidth: 420,
+          maxWidth: 480,
           aspectRatio: "9 / 16",
           borderRadius: 16,
           overflow: "hidden",
