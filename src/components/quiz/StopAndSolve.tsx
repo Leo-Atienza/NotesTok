@@ -60,9 +60,9 @@ export function StopAndSolve({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <Card
-        className={`w-full max-w-lg p-6 space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300 ${
+        className={`w-full max-w-lg p-5 sm:p-6 space-y-4 sm:space-y-5 rounded-t-2xl sm:rounded-xl max-h-[90vh] overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-300 ${
           isAnswered ? "ring-2 ring-green-500/30 animate-celebrate" : ""
         }`}
       >

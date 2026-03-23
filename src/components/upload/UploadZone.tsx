@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { Upload, FileText, Loader2, Sparkles, BookOpen } from "lucide-react";
+import { Upload, FileText, Sparkles, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,9 +30,9 @@ export function UploadZone({ onLessonReady }: UploadZoneProps) {
       setCurrentStep(0);
       setConceptCount(0);
 
-      // 30-second timeout
+      // 60-second timeout (analyze ~10s + generate ~20s + buffer)
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+      const timeout = setTimeout(() => controller.abort(), 60000);
 
       try {
         // Step 1: Analyze content
@@ -70,7 +70,7 @@ export function UploadZone({ onLessonReady }: UploadZoneProps) {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") {
           setError(
-            "The AI is taking too long. Please try again with shorter notes."
+            "The AI is taking too long. Please try again with shorter notes or a simpler topic."
           );
         } else {
           setError(

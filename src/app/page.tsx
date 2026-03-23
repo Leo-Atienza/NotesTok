@@ -46,14 +46,23 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
+      {/* Top nav */}
+      <div className="max-w-4xl mx-auto px-4 pt-4 flex justify-between items-center">
+        <span className="text-sm font-semibold text-muted-foreground">NotesTok</span>
+        <Badge variant="outline" className="text-[10px] sm:text-xs gap-1 font-normal">
+          <Sparkles className="w-3 h-3" />
+          Powered by Google Gemini
+        </Badge>
+      </div>
+
       {/* Hero */}
-      <div className="max-w-4xl mx-auto px-4 pt-16 pb-8 text-center">
-        <h1 className="text-5xl md:text-6xl font-black tracking-tight mb-3">
+      <div className="max-w-4xl mx-auto px-4 pt-10 sm:pt-16 pb-6 sm:pb-8 text-center">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight mb-3">
           <span className="bg-gradient-to-r from-purple-600 via-primary to-blue-600 bg-clip-text text-transparent">
             NotesTok
           </span>
         </h1>
-        <p className="text-xl md:text-2xl font-semibold text-foreground mb-2">
+        <p className="text-lg sm:text-xl md:text-2xl font-semibold text-foreground mb-2">
           Upload Notes. Get Quizzed. Actually Remember.
         </p>
         <p className="text-sm text-muted-foreground max-w-lg mx-auto mb-4">
@@ -73,7 +82,6 @@ export default function Home() {
       <div className="max-w-2xl mx-auto px-4 pb-10">
         <div className="flex items-center justify-center gap-2 md:gap-4">
           <StepCard
-            step={1}
             icon={<Upload className="w-5 h-5" />}
             title="Upload any notes"
             color="text-purple-600 bg-purple-100"
@@ -81,7 +89,6 @@ export default function Home() {
           <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:block" />
           <div className="w-6 border-t border-dashed border-muted-foreground/30 shrink-0 sm:hidden" />
           <StepCard
-            step={2}
             icon={<Brain className="w-5 h-5" />}
             title="AI creates micro-lessons"
             color="text-primary bg-primary/10"
@@ -89,7 +96,6 @@ export default function Home() {
           <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:block" />
           <div className="w-6 border-t border-dashed border-muted-foreground/30 shrink-0 sm:hidden" />
           <StepCard
-            step={3}
             icon={<Trophy className="w-5 h-5" />}
             title="Quiz gates force recall"
             color="text-amber-600 bg-amber-100"
@@ -182,12 +188,10 @@ export default function Home() {
 }
 
 function StepCard({
-  step,
   icon,
   title,
   color,
 }: {
-  step: number;
   icon: React.ReactNode;
   title: string;
   color: string;

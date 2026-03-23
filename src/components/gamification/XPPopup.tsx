@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface XPPopupProps {
   amount: number;
@@ -9,12 +9,17 @@ interface XPPopupProps {
 
 export function XPPopup({ amount, trigger }: XPPopupProps) {
   const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (trigger === 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisible(true);
-    const timer = setTimeout(() => setVisible(false), 1200);
-    return () => clearTimeout(timer);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setVisible(false), 1200);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
   }, [trigger]);
 
   if (!visible) return null;

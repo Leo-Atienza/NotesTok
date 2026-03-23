@@ -4,6 +4,9 @@ import { CONTENT_ANALYSIS_PROMPT } from "@/lib/prompts";
 import { contentAnalysisSchema } from "@/lib/manifest-schema";
 import type { ContentAnalysis } from "@/lib/types";
 
+// pdf-parse requires Node.js runtime (not Edge)
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();

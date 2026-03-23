@@ -18,12 +18,14 @@ import {
   Loader2,
   Trophy,
   ArrowRight,
+  ArrowLeft,
   RotateCcw,
   Share2,
   CheckCircle2,
   Zap,
   Clock,
   SkipForward,
+  Home,
 } from "lucide-react";
 import { speak, cancelSpeech, pauseSpeech, resumeSpeech } from "@/lib/tts";
 import type { LessonManifest } from "@/lib/types";
@@ -44,6 +46,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   >({});
   const [scholarFailed, setScholarFailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [scholarLoading, setScholarLoading] = useState(false);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
 
@@ -121,6 +124,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
       !scholarContents[player.currentSegment.id]
     ) {
       setScholarFailed(false);
+      setScholarLoading(true);
       const segment = player.currentSegment;
       fetch("/api/simplify", {
         method: "POST",
@@ -141,6 +145,9 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
         })
         .catch(() => {
           setScholarFailed(true);
+        })
+        .finally(() => {
+          setScholarLoading(false);
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,6 +177,11 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     player.onNarrationEnd();
   };
 
+  const handleExit = () => {
+    cancelSpeech();
+    onRestart();
+  };
+
   const handleShareResults = () => {
     const text = `I just completed "${manifest.title}" on NotesTok and earned ${player.xp} XP across ${player.totalSegments} segments! Built with AI-powered active recall.`;
     navigator.clipboard.writeText(text).then(() => {
@@ -178,8 +190,19 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     });
   };
 
-  const progressPercent =
-    ((player.currentSegmentIndex + 1) / player.totalSegments) * 100;
+  // Completion-based progress: segment N of T = N/T after completing segment N
+  // During a segment, show partial progress toward next milestone
+  const baseProgress = (player.currentSegmentIndex / player.totalSegments) * 100;
+  const segmentChunk = (1 / player.totalSegments) * 100;
+  // Show half credit for being in a segment, full credit when quiz done
+  const inSegmentBonus =
+    player.playerState === "quiz-feedback" || player.playerState === "completed"
+      ? segmentChunk
+      : segmentChunk * 0.5;
+  const progressPercent = Math.min(
+    baseProgress + inSegmentBonus,
+    player.playerState === "completed" ? 100 : 99
+  );
 
   // Completion screen
   if (player.playerState === "completed") {
@@ -227,8 +250,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
 
           {/* Actions */}
           <div className="flex gap-3 justify-center">
-            <Button variant="outline" onClick={onRestart}>
-              <RotateCcw className="w-4 h-4 mr-2" />
+            <Button variant="outline" onClick={handleExit}>
+              <Home className="w-4 h-4 mr-2" />
               New Lesson
             </Button>
             <Button onClick={handleShareResults}>
@@ -261,17 +284,26 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/50">
       {/* Top bar */}
-      <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="text-xs">
+      <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b px-3 sm:px-4 py-2 sm:py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={handleExit}
+              title="Back to home"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <Badge variant="outline" className="text-xs shrink-0">
               {player.currentSegmentIndex + 1} / {player.totalSegments}
             </Badge>
-            <span className="text-sm font-medium truncate max-w-[200px]">
+            <span className="text-xs sm:text-sm font-medium truncate">
               {manifest.title}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <GlobalScholarToggle
               enabled={player.isScholarMode}
               onToggle={player.toggleScholar}
@@ -279,7 +311,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             <XPCounter xp={player.xp} />
           </div>
         </div>
-        <div className="max-w-2xl mx-auto mt-2">
+        <div className="max-w-2xl mx-auto mt-1.5 sm:mt-2">
           <Progress value={progressPercent} className="h-1.5" />
         </div>
       </div>
@@ -313,6 +345,15 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               Simplified Explanation
             </Badge>
           )}
+          {player.isScholarMode && scholarLoading && (
+            <Badge
+              variant="outline"
+              className="mb-3 text-blue-600 border-blue-300 animate-pulse"
+            >
+              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              Simplifying for ESL...
+            </Badge>
+          )}
           {player.isScholarMode && scholarFailed && (
             <Badge
               variant="outline"
@@ -341,7 +382,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
         )}
 
         {/* Controls */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -368,9 +409,13 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             </Button>
 
             {isSpeaking && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                Speaking...
+              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span className="flex gap-0.5 items-end h-3">
+                  <span className="w-0.5 bg-green-500 rounded-full animate-sound-bar" style={{ animationDelay: "0ms" }} />
+                  <span className="w-0.5 bg-green-500 rounded-full animate-sound-bar" style={{ animationDelay: "150ms" }} />
+                  <span className="w-0.5 bg-green-500 rounded-full animate-sound-bar" style={{ animationDelay: "300ms" }} />
+                </span>
+                Speaking
               </span>
             )}
           </div>
@@ -394,15 +439,17 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               </Button>
             )}
 
-            {/* Skip / Next — always visible during playback */}
-            {player.playerState === "playing" && (
+            {/* Skip / Next — visible during playback, paused, or panic-loading */}
+            {(player.playerState === "playing" ||
+              player.playerState === "paused" ||
+              player.playerState === "panic-loading") && (
               <Button
                 variant={isMuted ? "outline" : "ghost"}
                 size="sm"
                 onClick={handleSkipNarration}
                 className={isMuted ? "" : "text-muted-foreground"}
               >
-                {isMuted ? (
+                {isMuted || player.playerState === "paused" ? (
                   <>
                     Next
                     <ArrowRight className="w-3 h-3 ml-1" />
