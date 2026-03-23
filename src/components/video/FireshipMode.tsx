@@ -8,6 +8,8 @@ import {
   interpolate,
   spring,
 } from "remotion";
+import { AnimatedCaptions } from "./AnimatedCaptions";
+import { generateCaptionData } from "./CaptionEngine";
 import type { Segment } from "@/lib/types";
 
 interface FireshipModeProps {
@@ -19,74 +21,120 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const { fps, durationInFrames } = useVideoConfig();
 
   const content = segment.content;
+  const captions = generateCaptionData(content);
   const hasImage = !!segment.imageUrl;
 
-  // --- Title sequence (frames 0-50) ---
+  // --- Entry/exit animation ---
+  const entryScale =
+    frame < 8
+      ? interpolate(frame, [0, 8], [1.05, 1], { extrapolateRight: "clamp" })
+      : 1;
+  const entryOpacity =
+    frame < 8
+      ? interpolate(frame, [0, 8], [0, 1], { extrapolateRight: "clamp" })
+      : 1;
+  const exitStart = durationInFrames - 8;
+  const exitOpacity =
+    frame > exitStart
+      ? interpolate(frame, [exitStart, durationInFrames], [1, 0], {
+          extrapolateRight: "clamp",
+        })
+      : 1;
+  const exitScale =
+    frame > exitStart
+      ? interpolate(frame, [exitStart, durationInFrames], [1, 0.95], {
+          extrapolateRight: "clamp",
+        })
+      : 1;
+
+  // --- Title section (enters, then fades out by frame ~70) ---
   const emojiScale = spring({
     frame,
     fps,
     config: { damping: 8, mass: 0.4, stiffness: 200 },
   });
-
   const titleSlideX = interpolate(
     spring({ frame: Math.max(0, frame - 5), fps, config: { damping: 12 } }),
     [0, 1],
     [-300, 0]
   );
-
-  const titleOpacity = interpolate(frame, [5, 20], [0, 1], {
+  const titleEntryOpacity = interpolate(frame, [5, 18], [0, 1], {
     extrapolateRight: "clamp",
   });
-
-  const badgeOpacity = interpolate(frame, [25, 40], [0, 1], {
+  const badgeOpacity = interpolate(frame, [20, 35], [0, 1], {
     extrapolateRight: "clamp",
   });
-
-  // Image reveal
-  const imageOpacity = interpolate(frame, [15, 35], [0, 1], {
+  // Line wipe
+  const lineWidth = interpolate(frame, [30, 48], [0, 100], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const imageScale = spring({
-    frame: Math.max(0, frame - 15),
+  // Title fades out to make room for content
+  const titleExitOpacity = interpolate(frame, [55, 70], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const titleExitY = interpolate(frame, [55, 70], [0, -60], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const titleOpacity = titleEntryOpacity * titleExitOpacity;
+
+  // --- Animated accent glows ---
+  const glow1Top = -100 + Math.sin(frame / 60) * 30;
+  const glow1Right = -100 + Math.cos(frame / 60) * 20;
+  const glow2Bottom = -80 + Math.sin(frame / 50) * 25;
+  const glow2Left = -80 + Math.cos(frame / 50) * 15;
+
+  // --- Image card (slides in from right) ---
+  const imageSlide = spring({
+    frame: Math.max(0, frame - 12),
     fps,
-    config: { damping: 14, mass: 0.6 },
+    config: { damping: 14, mass: 0.7 },
+  });
+  const imageX = interpolate(imageSlide, [0, 1], [120, 0]);
+  const imageOpacity = interpolate(imageSlide, [0, 1], [0, 1]);
+  const imageFloat = Math.sin(frame / 40) * 3;
+  // Image fades after title section to give full focus to captions
+  const imageFadeOpacity =
+    frame > 70
+      ? interpolate(frame, [70, 90], [1, 0.3], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      : 1;
+  // Glowing border pulse
+  const borderGlow = 0.15 + 0.1 * Math.sin(frame / 20);
+
+  // --- Key terms as left-edge badges ---
+  // Calculate approximate timing for each key term based on content position
+  const keyTermTimings = segment.keyTerms.map((term) => {
+    const pos = content.toLowerCase().indexOf(term.toLowerCase());
+    if (pos < 0) return durationInFrames * 0.6; // fallback: appear at 60%
+    const wordsBefore = content.slice(0, pos).split(/\s+/).length;
+    const totalWords = content.split(/\s+/).length;
+    const frac = wordsBefore / totalWords;
+    // Map to frame range (captions start ~after title fades)
+    return Math.round(40 + frac * (durationInFrames - 80));
   });
 
-  // Horizontal line wipe
-  const lineWidth = interpolate(frame, [35, 55], [0, 100], {
-    extrapolateLeft: "clamp",
+  // --- Progress bar ---
+  const progressWidth = interpolate(frame, [0, durationInFrames], [0, 100], {
     extrapolateRight: "clamp",
   });
 
-  // --- Content sequence (frames 50+) ---
-  const contentStartFrame = 50;
-  const contentEndBuffer = 40; // frames for key terms display
-  const availableContentFrames = durationInFrames - contentStartFrame - contentEndBuffer;
-  const charsPerFrame = content.length / Math.max(availableContentFrames, 1);
-  const revealedChars =
-    frame > contentStartFrame
-      ? Math.min(
-          content.length,
-          Math.floor((frame - contentStartFrame) * charsPerFrame)
-        )
-      : 0;
-  const revealedText = content.slice(0, revealedChars);
-
-  // Cursor blink
-  const cursorVisible =
-    revealedChars < content.length &&
-    frame > contentStartFrame &&
-    frame % 30 < 18;
-
-  // Key terms timing
-  const contentDoneFrame =
-    contentStartFrame + Math.ceil(content.length / charsPerFrame);
+  // --- Segment counter ---
+  const counterOpacity = interpolate(frame, [8, 20], [0, 1], {
+    extrapolateRight: "clamp",
+  });
 
   return (
     <AbsoluteFill
       style={{
-        background: "linear-gradient(160deg, #0d1117 0%, #161b22 40%, #1c2333 100%)",
+        background:
+          "linear-gradient(160deg, #0d1117 0%, #161b22 40%, #1c2333 100%)",
+        transform: `scale(${entryScale * exitScale})`,
+        opacity: entryOpacity * exitOpacity,
       }}
     >
       {/* Subtle grid pattern */}
@@ -98,20 +146,34 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         }}
       />
 
-      {/* Accent glow in top corner */}
+      {/* Animated accent glow — top right (blue) */}
       <div
         style={{
           position: "absolute",
-          top: -100,
-          right: -100,
+          top: glow1Top,
+          right: glow1Right,
           width: 300,
           height: 300,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%)",
+          background:
+            "radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)",
+        }}
+      />
+      {/* Animated accent glow — bottom left (amber) */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: glow2Bottom,
+          left: glow2Left,
+          width: 250,
+          height: 250,
+          borderRadius: "50%",
+          background:
+            "radial-gradient(circle, rgba(255,166,87,0.06) 0%, transparent 70%)",
         }}
       />
 
-      {/* Title section */}
+      {/* Title section — slides up and fades out */}
       <Sequence from={0} durationInFrames={durationInFrames}>
         <div
           style={{
@@ -123,6 +185,8 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
             flexDirection: "column",
             alignItems: "center",
             padding: "0 28px",
+            opacity: titleOpacity,
+            transform: `translateY(${titleExitY}px)`,
           }}
         >
           {/* Emoji */}
@@ -145,11 +209,11 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
               fontSize: 28,
               fontWeight: 800,
               textAlign: "center",
-              opacity: titleOpacity,
               transform: `translateX(${titleSlideX}px)`,
               fontFamily: "system-ui, -apple-system, sans-serif",
               lineHeight: 1.25,
               maxWidth: "90%",
+              margin: 0,
             }}
           >
             {segment.title}
@@ -199,22 +263,22 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         </div>
       </Sequence>
 
-      {/* AI-generated image (if available) — shown as inset card */}
+      {/* Image card — slides in from right, floats */}
       {hasImage && (
         <div
           style={{
             position: "absolute",
-            top: "28%",
+            top: "25%",
             left: "50%",
-            transform: `translateX(-50%) scale(${imageScale})`,
-            opacity: imageOpacity,
-            width: "85%",
-            maxWidth: 900,
+            transform: `translateX(calc(-50% + ${imageX}px)) translateY(${imageFloat}px)`,
+            opacity: imageOpacity * imageFadeOpacity,
+            width: "65%",
+            maxWidth: 700,
             aspectRatio: "16/9",
-            borderRadius: 12,
+            borderRadius: 14,
             overflow: "hidden",
-            border: "1px solid rgba(48,54,61,0.6)",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(88,166,255,0.1)",
+            border: `1px solid rgba(88,166,255,${borderGlow})`,
+            boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(88,166,255,${borderGlow * 0.5})`,
           }}
         >
           <Img
@@ -228,118 +292,75 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         </div>
       )}
 
-      {/* Content area — typewriter effect (positioned below image or in center) */}
-      <Sequence
-        from={contentStartFrame}
-        durationInFrames={durationInFrames - contentStartFrame}
+      {/* CapCut-style captions (fireship variant) */}
+      <AnimatedCaptions captions={captions} style="fireship" />
+
+      {/* Key terms — left-edge vertical badges, staggered entrance */}
+      <div
+        style={{
+          position: "absolute",
+          left: "4%",
+          top: "42%",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: hasImage ? "58%" : "32%",
-            left: 0,
-            right: 0,
-            padding: "0 28px",
-          }}
-        >
-          {/* Code-editor style container */}
-          <div
-            style={{
-              backgroundColor: "rgba(13,17,23,0.85)",
-              border: "1px solid rgba(48,54,61,0.7)",
-              borderRadius: 10,
-              padding: "20px 22px",
-              position: "relative",
-              backdropFilter: "blur(8px)",
-            }}
-          >
-            {/* Editor dots */}
-            <div
+        {segment.keyTerms.map((term, i) => {
+          const termAppearFrame = keyTermTimings[i];
+          const termScale = spring({
+            frame: Math.max(0, frame - termAppearFrame),
+            fps,
+            config: { damping: 10, mass: 0.4 },
+          });
+          const termOpacity =
+            frame >= termAppearFrame
+              ? interpolate(
+                  frame,
+                  [termAppearFrame, termAppearFrame + 10],
+                  [0, 1],
+                  { extrapolateRight: "clamp" }
+                )
+              : 0;
+
+          return (
+            <span
+              key={term}
               style={{
-                display: "flex",
-                gap: 5,
-                position: "absolute",
-                top: 10,
-                left: 14,
+                display: "inline-block",
+                transform: `scale(${termScale})`,
+                transformOrigin: "left center",
+                opacity: termOpacity,
+                padding: "4px 10px",
+                borderRadius: 6,
+                backgroundColor: "rgba(88,166,255,0.12)",
+                border: "1px solid rgba(88,166,255,0.25)",
+                color: "#58a6ff",
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: "'SF Mono', 'Fira Code', monospace",
+                whiteSpace: "nowrap",
               }}
             >
-              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#ff5f57" }} />
-              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#febc2e" }} />
-              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#28c840" }} />
-            </div>
+              {term}
+            </span>
+          );
+        })}
+      </div>
 
-            <p
-              style={{
-                color: "#c9d1d9",
-                fontSize: 18,
-                lineHeight: 1.65,
-                fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
-                margin: 0,
-                marginTop: 16,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              <HighlightedText
-                text={revealedText}
-                keyTerms={segment.keyTerms}
-                frame={frame}
-                fps={fps}
-                contentStartFrame={contentStartFrame}
-              />
-              {cursorVisible && (
-                <span style={{ color: "#58a6ff", fontWeight: 300 }}>|</span>
-              )}
-            </p>
-          </div>
-        </div>
-      </Sequence>
-
-      {/* Key terms badges */}
-      {frame > contentDoneFrame && segment.keyTerms.length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "8%",
-            left: 0,
-            right: 0,
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "center",
-            gap: 8,
-            padding: "0 20px",
-          }}
-        >
-          {segment.keyTerms.map((term, i) => {
-            const termScale = spring({
-              frame: Math.max(0, frame - contentDoneFrame - i * 6),
-              fps,
-              config: { damping: 10, mass: 0.4 },
-            });
-
-            return (
-              <span
-                key={term}
-                style={{
-                  display: "inline-block",
-                  transform: `scale(${termScale})`,
-                  transformOrigin: "center",
-                  padding: "5px 12px",
-                  borderRadius: 6,
-                  backgroundColor: "rgba(88,166,255,0.12)",
-                  border: "1px solid rgba(88,166,255,0.3)",
-                  color: "#58a6ff",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  fontFamily: "'SF Mono', 'Fira Code', monospace",
-                }}
-              >
-                {term}
-              </span>
-            );
-          })}
-        </div>
-      )}
+      {/* Progress bar */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 3,
+          width: `${progressWidth}%`,
+          backgroundColor: "#58a6ff",
+          borderRadius: "0 2px 2px 0",
+          zIndex: 10,
+        }}
+      />
 
       {/* Segment counter */}
       <div
@@ -354,65 +375,11 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           fontSize: 12,
           fontWeight: 600,
           fontFamily: "'SF Mono', monospace",
+          opacity: counterOpacity,
         }}
       >
         {segment.order + 1}
       </div>
     </AbsoluteFill>
-  );
-};
-
-/**
- * Renders text with key terms highlighted inline.
- */
-const HighlightedText: React.FC<{
-  text: string;
-  keyTerms: string[];
-  frame: number;
-  fps: number;
-  contentStartFrame: number;
-}> = ({ text, keyTerms, frame, fps, contentStartFrame }) => {
-  if (!keyTerms.length) return <>{text}</>;
-
-  const regex = new RegExp(
-    `(${keyTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-    "gi"
-  );
-  const parts = text.split(regex);
-
-  return (
-    <>
-      {parts.map((part, i) => {
-        const isKeyTerm = keyTerms.some(
-          (t) => t.toLowerCase() === part.toLowerCase()
-        );
-        if (isKeyTerm) {
-          const charPos = text.indexOf(part);
-          const termRevealFrame =
-            contentStartFrame + Math.floor(charPos * 0.5);
-          const pop = spring({
-            frame: Math.max(0, frame - termRevealFrame),
-            fps,
-            config: { damping: 12, mass: 0.3 },
-          });
-
-          return (
-            <span
-              key={i}
-              style={{
-                color: "#58a6ff",
-                fontWeight: 700,
-                display: "inline-block",
-                transform: `scale(${Math.min(pop * 1.05, 1.05)})`,
-                textShadow: "0 0 8px rgba(88,166,255,0.4)",
-              }}
-            >
-              {part}
-            </span>
-          );
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </>
   );
 };

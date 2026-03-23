@@ -33,19 +33,44 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
   const captions = generateCaptionData(content);
   const hasImage = !!segment.imageUrl;
 
-  // Ken Burns effect on AI image — slow zoom + slight pan
-  const kenBurnsScale = interpolate(frame, [0, durationInFrames], [1.0, 1.15], {
-    extrapolateRight: "clamp",
-  });
-  const kenBurnsPanX = interpolate(frame, [0, durationInFrames], [0, -15], {
-    extrapolateRight: "clamp",
-  });
-  const kenBurnsPanY = interpolate(frame, [0, durationInFrames], [0, -8], {
-    extrapolateRight: "clamp",
-  });
+  // --- Frame boundaries for image phases ---
+  const phase1End = Math.round(durationInFrames * 0.2);
+  const phase3Start = Math.round(durationInFrames * 0.8);
 
-  // Title animation
-  const titleOpacity = interpolate(frame, [0, 20], [0, 1], {
+  // --- Dynamic image treatment (3 phases) ---
+  // Phase 1: Zoom reveal — scale 1.3 + blur → 1.1 + no blur
+  const revealProgress = spring({
+    frame: Math.min(frame, phase1End),
+    fps,
+    config: { damping: 18, mass: 1.2 },
+  });
+  // Phase 2: Living drift — sinusoidal motion
+  const driftX = Math.sin((frame / fps) * 0.5) * 15;
+  const driftY = Math.cos((frame / fps) * 0.35) * 10;
+  // Phase 3: Settle to scale 1.0
+  const settleProgress =
+    frame > phase3Start
+      ? interpolate(frame, [phase3Start, durationInFrames], [0, 1], {
+          extrapolateRight: "clamp",
+        })
+      : 0;
+
+  // Compose the image transform
+  const imageScale =
+    frame < phase1End
+      ? interpolate(revealProgress, [0, 1], [1.3, 1.1])
+      : frame > phase3Start
+        ? interpolate(settleProgress, [0, 1], [1.08, 1.0])
+        : 1.08;
+  const imageBlur =
+    frame < phase1End
+      ? interpolate(revealProgress, [0, 1], [8, 0])
+      : 0;
+  const imageTranslateX = frame >= phase1End ? driftX : 0;
+  const imageTranslateY = frame >= phase1End ? driftY : 0;
+
+  // --- Title animation (visible first ~60 frames, then fades) ---
+  const titleEntryOpacity = interpolate(frame, [0, 15], [0, 1], {
     extrapolateRight: "clamp",
   });
   const titleSlide = spring({
@@ -54,31 +79,75 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
     config: { damping: 12, mass: 0.8 },
   });
   const titleY = interpolate(titleSlide, [0, 1], [-40, 0]);
+  // Fade out title after ~2s to declutter
+  const titleExitOpacity = interpolate(frame, [50, 65], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const titleOpacity = titleEntryOpacity * titleExitOpacity;
 
-  // Emoji pop
+  // --- Emoji pop ---
   const emojiScale = spring({
-    frame: Math.max(0, frame - 5),
+    frame: Math.max(0, frame - 3),
     fps,
     config: { damping: 8, mass: 0.5, stiffness: 200 },
   });
 
-  // Segment counter fade
-  const counterOpacity = interpolate(frame, [10, 25], [0, 1], {
+  // --- Progress bar ---
+  const progressWidth = interpolate(frame, [0, durationInFrames], [0, 100], {
     extrapolateRight: "clamp",
   });
 
-  // Animated gradient fallback
+  // --- Entry/exit animation ---
+  const entryScale =
+    frame < 8
+      ? interpolate(frame, [0, 8], [1.05, 1], { extrapolateRight: "clamp" })
+      : 1;
+  const entryOpacity =
+    frame < 8
+      ? interpolate(frame, [0, 8], [0, 1], { extrapolateRight: "clamp" })
+      : 1;
+  const exitStart = durationInFrames - 8;
+  const exitOpacity =
+    frame > exitStart
+      ? interpolate(frame, [exitStart, durationInFrames], [1, 0], {
+          extrapolateRight: "clamp",
+        })
+      : 1;
+  const exitScale =
+    frame > exitStart
+      ? interpolate(frame, [exitStart, durationInFrames], [1, 0.95], {
+          extrapolateRight: "clamp",
+        })
+      : 1;
+
+  const compositeScale = entryScale * exitScale;
+  const compositeOpacity = entryOpacity * exitOpacity;
+
+  // --- Gradient fallback ---
   const gradientSet = GRADIENT_SETS[segment.order % GRADIENT_SETS.length];
   const gradientAngle = interpolate(frame, [0, durationInFrames], [0, 360]);
   const pulseScale = 1 + 0.02 * Math.sin((frame / fps) * Math.PI * 0.5);
 
+  // --- Segment counter ---
+  const counterOpacity = interpolate(frame, [8, 20], [0, 1], {
+    extrapolateRight: "clamp",
+  });
+
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {/* Layer 1: Background — AI image with Ken Burns OR animated gradient */}
+    <AbsoluteFill
+      style={{
+        backgroundColor: "#000",
+        transform: `scale(${compositeScale})`,
+        opacity: compositeOpacity,
+      }}
+    >
+      {/* Layer 1: Background — AI image with dynamic treatment OR animated gradient */}
       {hasImage ? (
         <AbsoluteFill
           style={{
-            transform: `scale(${kenBurnsScale}) translate(${kenBurnsPanX}px, ${kenBurnsPanY}px)`,
+            transform: `scale(${imageScale}) translate(${imageTranslateX}px, ${imageTranslateY}px)`,
+            filter: imageBlur > 0 ? `blur(${imageBlur}px)` : undefined,
             overflow: "hidden",
           }}
         >
@@ -100,13 +169,13 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
               opacity: 0.9,
             }}
           />
-          {/* Bokeh particles for gradient fallback */}
-          <AbsoluteFill style={{ opacity: 0.3 }}>
-            {Array.from({ length: 8 }).map((_, i) => {
+          {/* Bokeh particles */}
+          <AbsoluteFill style={{ opacity: 0.4 }}>
+            {Array.from({ length: 12 }).map((_, i) => {
               const x = ((i * 137.5 + frame * (0.3 + i * 0.1)) % 120) - 10;
               const y = ((i * 97.3 + frame * (0.2 + i * 0.08)) % 120) - 10;
-              const size = 40 + i * 20;
-              const o = 0.15 + 0.1 * Math.sin((frame + i * 30) / 30);
+              const size = 30 + i * 18;
+              const o = 0.15 + 0.12 * Math.sin((frame + i * 30) / 30);
               return (
                 <div
                   key={i}
@@ -118,7 +187,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
                     height: size,
                     borderRadius: "50%",
                     background: `radial-gradient(circle, rgba(255,255,255,${o}) 0%, transparent 70%)`,
-                    filter: "blur(20px)",
+                    filter: "blur(16px)",
                   }}
                 />
               );
@@ -127,16 +196,23 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
         </>
       )}
 
-      {/* Layer 2: Dark overlays for text readability */}
+      {/* Layer 2: Radial vignette (cinematic) */}
       <AbsoluteFill
         style={{
-          background: hasImage
-            ? "linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 30%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.7) 100%)"
-            : "linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 20%, transparent 50%, rgba(0,0,0,0.7) 100%)",
+          background:
+            "radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.65) 100%)",
         }}
       />
 
-      {/* Layer 3: Title + emoji at top */}
+      {/* Layer 3: Bottom gradient for caption readability */}
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.5) 65%, rgba(0,0,0,0.85) 100%)",
+        }}
+      />
+
+      {/* Layer 4: Title section — fades out after ~2s */}
       <Sequence from={0} durationInFrames={durationInFrames}>
         <div
           style={{
@@ -156,7 +232,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
               fontSize: 72,
               transform: `scale(${emojiScale})`,
               display: "inline-block",
-              filter: "drop-shadow(0 4px 8px rgba(0,0,0,0.5))",
+              filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.6))",
             }}
           >
             {segment.emoji}
@@ -164,11 +240,12 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
           <h2
             style={{
               color: "#fff",
-              fontSize: 28,
+              fontSize: 30,
               fontWeight: 800,
               textAlign: "center",
-              margin: "8px 24px 0",
-              textShadow: "2px 2px 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.5)",
+              margin: "10px 28px 0",
+              textShadow:
+                "2px 2px 8px rgba(0,0,0,0.95), 0 0 20px rgba(0,0,0,0.6)",
               fontFamily: "system-ui, -apple-system, sans-serif",
               lineHeight: 1.3,
             }}
@@ -177,13 +254,13 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
           </h2>
           <span
             style={{
-              marginTop: 8,
-              padding: "4px 14px",
+              marginTop: 10,
+              padding: "5px 16px",
               borderRadius: 20,
-              backgroundColor: "rgba(0,0,0,0.4)",
+              backgroundColor: "rgba(0,0,0,0.45)",
               backdropFilter: "blur(4px)",
-              color: "rgba(255,255,255,0.8)",
-              fontSize: 12,
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 13,
               fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: 1.2,
@@ -194,10 +271,24 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
         </div>
       </Sequence>
 
-      {/* Layer 4: Animated captions — the star of the show */}
+      {/* Layer 5: CapCut-style captions */}
       <AnimatedCaptions captions={captions} style="brainrot" />
 
-      {/* Layer 5: Segment counter */}
+      {/* Layer 6: Progress bar */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 3,
+          width: `${progressWidth}%`,
+          backgroundColor: "#22c55e",
+          borderRadius: "0 2px 2px 0",
+          zIndex: 10,
+        }}
+      />
+
+      {/* Layer 7: Segment counter */}
       <div
         style={{
           position: "absolute",
@@ -206,7 +297,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({ segment }) => {
           opacity: counterOpacity,
           padding: "6px 14px",
           borderRadius: 16,
-          backgroundColor: "rgba(0,0,0,0.4)",
+          backgroundColor: "rgba(0,0,0,0.45)",
           backdropFilter: "blur(8px)",
           color: "rgba(255,255,255,0.85)",
           fontSize: 13,
