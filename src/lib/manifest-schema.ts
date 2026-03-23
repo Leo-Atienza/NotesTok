@@ -69,6 +69,11 @@ export const lessonManifestSchema = {
             items: { type: "string" as Type },
           },
           emoji: { type: "string" as Type },
+          imagePrompt: {
+            type: "string" as Type,
+            description:
+              "A vivid image generation prompt describing an illustration for this segment. Describe a scene, diagram, or visual metaphor that would help explain the concept. Focus on educational imagery — no text in the image. Example: 'A colorful cross-section diagram of a plant cell showing the chloroplast, mitochondria, and cell wall, illustrated in a modern flat design style with vibrant colors'",
+          },
           quiz: {
             type: "object" as Type,
             properties: {

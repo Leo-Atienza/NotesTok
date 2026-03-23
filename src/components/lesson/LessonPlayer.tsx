@@ -26,7 +26,10 @@ import {
   Clock,
   SkipForward,
   Home,
+  Brain,
+  FileText,
 } from "lucide-react";
+import { VideoPlayer } from "@/components/video/VideoPlayer";
 import { speak, cancelSpeech, pauseSpeech, resumeSpeech } from "@/lib/tts";
 import type { LessonManifest } from "@/lib/types";
 
@@ -34,6 +37,8 @@ interface LessonPlayerProps {
   manifest: LessonManifest;
   onRestart: () => void;
 }
+
+type VideoMode = "classic" | "brainrot" | "fireship";
 
 export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   const player = useLessonPlayer();
@@ -47,17 +52,57 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   const [scholarFailed, setScholarFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [scholarLoading, setScholarLoading] = useState(false);
+  const [videoMode, setVideoMode] = useState<VideoMode | null>(null);
+  const [segmentImages, setSegmentImages] = useState<Record<string, string>>({});
+  const [imagesLoading, setImagesLoading] = useState(false);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
 
-  // Start lesson on mount
+  // Start lesson after mode is selected
   useEffect(() => {
-    if (!hasStartedRef.current) {
+    if (videoMode && !hasStartedRef.current) {
       hasStartedRef.current = true;
       player.startLesson(manifest);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest]);
+  }, [manifest, videoMode]);
+
+  // Generate images when a video mode is selected
+  useEffect(() => {
+    if (!videoMode || videoMode === "classic") return;
+    if (Object.keys(segmentImages).length > 0) return; // already generated
+
+    const segmentsWithPrompts = manifest.segments.filter((s) => s.imagePrompt);
+    if (segmentsWithPrompts.length === 0) return;
+
+    setImagesLoading(true);
+
+    // Fire image requests sequentially with stagger to avoid rate limits
+    (async () => {
+      for (const segment of segmentsWithPrompts) {
+        try {
+          const res = await fetch("/api/generate-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: segment.imagePrompt }),
+          });
+          const data = await res.json();
+          if (data.imageUrl) {
+            setSegmentImages((prev) => ({
+              ...prev,
+              [segment.id]: data.imageUrl,
+            }));
+          }
+        } catch {
+          // Graceful fallback — segment plays without image
+        }
+        // Small delay between requests to avoid rate limiting
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      setImagesLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoMode]);
 
   // Handle TTS narration
   useEffect(() => {
@@ -190,6 +235,89 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     });
   };
 
+  // Handle video segment completion (for brainrot/fireship modes)
+  const handleVideoSegmentComplete = () => {
+    // If there's a quiz, the hook handles it via onNarrationEnd
+    player.onNarrationEnd();
+  };
+
+  // Mode picker screen
+  if (!videoMode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background to-muted">
+        <div className="text-center space-y-8 max-w-lg animate-fade-in">
+          <div>
+            <h2 className="text-2xl font-bold mb-2">Choose Your Style</h2>
+            <p className="text-muted-foreground text-sm">
+              How do you want to learn &ldquo;{manifest.title}&rdquo;?
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            {/* Brainrot mode */}
+            <button
+              onClick={() => setVideoMode("brainrot")}
+              className="group relative flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all text-left"
+            >
+              <div className="w-12 h-12 rounded-lg bg-yellow-500/10 flex items-center justify-center shrink-0">
+                <Brain className="w-6 h-6 text-yellow-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base">Brainrot Mode</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  TikTok-style video with animated captions &amp; visuals
+                </p>
+              </div>
+              <Badge className="absolute top-2 right-2 bg-yellow-500/10 text-yellow-600 border-yellow-500/20 text-[10px]">
+                NEW
+              </Badge>
+            </button>
+
+            {/* Fireship mode */}
+            <button
+              onClick={() => setVideoMode("fireship")}
+              className="group relative flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-left"
+            >
+              <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                <Zap className="w-6 h-6 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base">Fireship Mode</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Fast-paced explainer with typewriter code style
+                </p>
+              </div>
+              <Badge className="absolute top-2 right-2 bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px]">
+                NEW
+              </Badge>
+            </button>
+
+            {/* Classic mode */}
+            <button
+              onClick={() => setVideoMode("classic")}
+              className="group flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left"
+            >
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FileText className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base">Classic Mode</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Text cards with narration &amp; interactive quizzes
+                </p>
+              </div>
+            </button>
+          </div>
+
+          <Button variant="ghost" size="sm" onClick={handleExit} className="text-muted-foreground">
+            <ArrowLeft className="w-3 h-3 mr-1" />
+            Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // Completion-based progress: segment N of T = N/T after completing segment N
   // During a segment, show partial progress toward next milestone
   const baseProgress = (player.currentSegmentIndex / player.totalSegments) * 100;
@@ -316,11 +444,30 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
         </div>
       </div>
 
-      {/* Main content — key forces remount + animation on segment change */}
-      <div
-        key={player.currentSegmentIndex}
-        className="max-w-2xl mx-auto px-4 py-8 animate-segment-enter"
-      >
+      {/* Main content area */}
+      {videoMode !== "classic" && player.currentSegment ? (
+        /* Video mode: Brainrot or Fireship */
+        <div key={player.currentSegmentIndex} className="px-4 py-6 animate-segment-enter">
+          <VideoPlayer
+            segment={{
+              ...player.currentSegment,
+              imageUrl: segmentImages[player.currentSegment.id] || undefined,
+            }}
+            mode={videoMode as "brainrot" | "fireship"}
+            onComplete={handleVideoSegmentComplete}
+            isPaused={
+              player.playerState === "quiz-active" ||
+              player.playerState === "quiz-feedback" ||
+              player.playerState === "panic-loading"
+            }
+          />
+        </div>
+      ) : (
+        /* Classic mode — original text-based player */
+        <div
+          key={player.currentSegmentIndex}
+          className="max-w-2xl mx-auto px-4 py-8 animate-segment-enter"
+        >
         {/* Segment header */}
         <div className="flex items-center gap-3 mb-6">
           <span className="text-4xl">{player.currentSegment.emoji}</span>
@@ -465,6 +612,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Quiz overlay */}
       {player.playerState === "quiz-active" && player.currentSegment.quiz && (

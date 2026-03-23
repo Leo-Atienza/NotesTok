@@ -20,6 +20,8 @@ export interface Segment {
   emoji: string;
   quiz?: QuizCheckpoint;
   scholarContent?: string;
+  imagePrompt?: string;
+  imageUrl?: string;
 }
 
 export interface QuizCheckpoint {
