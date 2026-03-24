@@ -54,6 +54,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   const [scholarLoading, setScholarLoading] = useState(false);
   const [videoMode, setVideoMode] = useState<VideoMode | null>(null);
   const [segmentImages, setSegmentImages] = useState<Record<string, string>>({});
+  // Per-scene images: segmentId → array of image URLs
+  const [sceneImages, setSceneImages] = useState<Record<string, string[]>>({});
   const [imagesLoading, setImagesLoading] = useState(false);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
@@ -67,37 +69,64 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manifest, videoMode]);
 
-  // Generate images when a video mode is selected
+  // Generate per-scene images when a video mode is selected
   useEffect(() => {
     if (!videoMode || videoMode === "classic") return;
-    if (Object.keys(segmentImages).length > 0) return; // already generated
-
-    const segmentsWithPrompts = manifest.segments.filter((s) => s.imagePrompt);
-    if (segmentsWithPrompts.length === 0) return;
+    if (Object.keys(sceneImages).length > 0 || Object.keys(segmentImages).length > 0) return;
 
     setImagesLoading(true);
 
-    // Fire image requests sequentially with stagger to avoid rate limits
     (async () => {
-      for (const segment of segmentsWithPrompts) {
-        try {
-          const res = await fetch("/api/generate-image", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: segment.imagePrompt }),
-          });
-          const data = await res.json();
-          if (data.imageUrl) {
-            setSegmentImages((prev) => ({
-              ...prev,
-              [segment.id]: data.imageUrl,
-            }));
+      for (const segment of manifest.segments) {
+        const prompts = segment.sceneImagePrompts;
+
+        if (prompts && prompts.length > 0) {
+          // Fire up to 3 scene image requests in parallel per segment
+          const batchSize = 3;
+          for (let i = 0; i < prompts.length; i += batchSize) {
+            const batch = prompts.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+              batch.map((prompt) =>
+                fetch("/api/generate-image", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ prompt }),
+                }).then((r) => r.json())
+              )
+            );
+            // Store each result as it comes in
+            const newUrls: string[] = [];
+            for (const result of results) {
+              if (result.status === "fulfilled" && result.value.imageUrl) {
+                newUrls.push(result.value.imageUrl);
+              }
+            }
+            if (newUrls.length > 0) {
+              setSceneImages((prev) => ({
+                ...prev,
+                [segment.id]: [...(prev[segment.id] || []), ...newUrls],
+              }));
+            }
           }
-        } catch {
-          // Graceful fallback — segment plays without image
+          // Short pause between segments
+          await new Promise((r) => setTimeout(r, 800));
+        } else if (segment.imagePrompt) {
+          // Fallback: single image per segment
+          try {
+            const res = await fetch("/api/generate-image", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: segment.imagePrompt }),
+            });
+            const data = await res.json();
+            if (data.imageUrl) {
+              setSegmentImages((prev) => ({ ...prev, [segment.id]: data.imageUrl }));
+            }
+          } catch {
+            // Graceful fallback
+          }
+          await new Promise((r) => setTimeout(r, 1000));
         }
-        // Small delay between requests to avoid rate limiting
-        await new Promise((r) => setTimeout(r, 1500));
       }
       setImagesLoading(false);
     })();
@@ -446,8 +475,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
 
       {/* Main content area */}
       {videoMode !== "classic" && player.currentSegment ? (
-        /* Video mode: Brainrot or Fireship */
-        <div key={player.currentSegmentIndex} className="px-2 py-4 max-w-lg mx-auto animate-segment-enter">
+        /* Video mode: Brainrot or Fireship — full-width on mobile */
+        <div key={player.currentSegmentIndex} className="px-0 sm:px-2 py-2 sm:py-4 max-w-lg mx-auto animate-segment-enter">
           <VideoPlayer
             segment={{
               ...player.currentSegment,
@@ -460,6 +489,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               player.playerState === "quiz-feedback" ||
               player.playerState === "panic-loading"
             }
+            sceneImages={sceneImages[player.currentSegment.id] || undefined}
           />
         </div>
       ) : (

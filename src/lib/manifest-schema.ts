@@ -72,7 +72,13 @@ export const lessonManifestSchema = {
           imagePrompt: {
             type: "string" as Type,
             description:
-              "A vivid image generation prompt describing an illustration for this segment. Describe a scene, diagram, or visual metaphor that would help explain the concept. Focus on educational imagery — no text in the image. Example: 'A colorful cross-section diagram of a plant cell showing the chloroplast, mitochondria, and cell wall, illustrated in a modern flat design style with vibrant colors'",
+              "A vivid image generation prompt for this segment's main image. Dark, moody, cinematic illustrated scene. No text in the image.",
+          },
+          sceneImagePrompts: {
+            type: "array" as Type,
+            items: { type: "string" as Type },
+            description:
+              "Array of 3-6 vivid image generation prompts, one per sentence in the content. Each describes a different dramatic, cinematic illustrated scene matching that sentence. Think animated storytelling — characters, objects, dramatic lighting, deep shadows. NOT generic educational diagrams. Each scene should feel like a frame from an animated short film. Describe specific characters, actions, environments, camera angles. No text in images.",
           },
           quiz: {
             type: "object" as Type,

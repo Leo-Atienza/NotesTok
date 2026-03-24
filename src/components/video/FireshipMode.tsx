@@ -1,7 +1,6 @@
 import React from "react";
 import {
   AbsoluteFill,
-  Sequence,
   Img,
   useCurrentFrame,
   useVideoConfig,
@@ -14,14 +13,19 @@ import type { Segment } from "@/lib/types";
 
 interface FireshipModeProps {
   segment: Segment;
+  sceneImages?: string[];
 }
 
-export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
+export const FireshipMode: React.FC<FireshipModeProps> = ({
+  segment,
+  sceneImages = [],
+}) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  const scenes = generateSceneData(segment.content);
-  const hasImage = !!segment.imageUrl;
+  const scenes = generateSceneData(segment.content, 2.8, segment.keyTerms);
+  const hasSceneImages = sceneImages.length > 0;
+  const hasSingleImage = !!segment.imageUrl;
 
   // --- Title section (enters, then fades by frame ~55) ---
   const emojiScale = spring({
@@ -61,7 +65,21 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const glow2Bottom = -80 + Math.sin(frame / 50) * 25;
   const glow2Left = -80 + Math.cos(frame / 50) * 15;
 
-  // --- Image card ---
+  // --- Determine current scene for per-scene images ---
+  const currentTimeMs = (frame / fps) * 1000;
+  let currentSceneIndex = 0;
+  for (let i = 0; i < scenes.length; i++) {
+    if (currentTimeMs >= scenes[i].startMs) currentSceneIndex = i;
+  }
+
+  const currentSceneImage =
+    hasSceneImages && sceneImages[currentSceneIndex]
+      ? sceneImages[currentSceneIndex]
+      : hasSingleImage
+        ? segment.imageUrl!
+        : null;
+
+  // Image card animations
   const imageSlide = spring({
     frame: Math.max(0, frame - 12),
     fps,
@@ -70,7 +88,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const imageX = interpolate(imageSlide, [0, 1], [120, 0]);
   const imageEntryOpacity = interpolate(imageSlide, [0, 1], [0, 1]);
   const imageFloat = Math.sin(frame / 40) * 3;
-  // Fade image after title to give focus to captions
   const imageFadeOpacity = interpolate(frame, [55, 75], [1, 0.2], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
@@ -78,7 +95,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
   const borderGlow = 0.15 + 0.1 * Math.sin(frame / 20);
 
   // --- Key terms as left-edge badges ---
-  const currentTimeMs = (frame / fps) * 1000;
   const keyTermTimings = segment.keyTerms.map((term) => {
     const pos = segment.content.toLowerCase().indexOf(term.toLowerCase());
     if (pos < 0) return durationInFrames * 0.6;
@@ -135,7 +151,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         }}
       />
 
-      {/* Title section — slides up and fades */}
+      {/* Title section */}
       {frame < 55 && (
         <div
           style={{
@@ -219,8 +235,8 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
         </div>
       )}
 
-      {/* Image card — slides in, floats, fades after title */}
-      {hasImage && (
+      {/* Per-scene image card */}
+      {currentSceneImage && (
         <div
           style={{
             position: "absolute",
@@ -238,12 +254,8 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
           }}
         >
           <Img
-            src={segment.imageUrl!}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
+            src={currentSceneImage}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         </div>
       )}
@@ -251,7 +263,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({ segment }) => {
       {/* Scene-based captions */}
       <AnimatedCaptions scenes={scenes} style="fireship" />
 
-      {/* Key terms — left-edge vertical badges */}
+      {/* Key terms badges */}
       <div
         style={{
           position: "absolute",

@@ -40,6 +40,8 @@ export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
           >
             <SceneDisplay
               scene={scene}
+              sceneIndex={sceneIndex}
+              durationFrames={durationFrames}
               style={style}
               pillColor={pillColor}
             />
@@ -52,12 +54,52 @@ export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
 
 interface SceneDisplayProps {
   scene: Scene;
+  sceneIndex: number;
+  durationFrames: number;
   style: "brainrot" | "fireship";
   pillColor: string;
 }
 
+// Per-word entry animation patterns
+function getWordAnimation(
+  wordIndex: number,
+  progress: number // 0→1 spring progress
+): { translateX: number; translateY: number; scale: number } {
+  const pattern = wordIndex % 4;
+  switch (pattern) {
+    case 0: // Slam down from top
+      return {
+        translateX: 0,
+        translateY: interpolate(progress, [0, 1], [-40, 0]),
+        scale: interpolate(progress, [0, 0.6, 1], [1.3, 1.05, 1]),
+      };
+    case 1: // Pop from center
+      return {
+        translateX: 0,
+        translateY: 0,
+        scale: interpolate(progress, [0, 0.5, 1], [0.3, 1.08, 1]),
+      };
+    case 2: // Slide from left
+      return {
+        translateX: interpolate(progress, [0, 1], [-60, 0]),
+        translateY: 0,
+        scale: interpolate(progress, [0, 1], [0.9, 1]),
+      };
+    case 3: // Slide from right
+      return {
+        translateX: interpolate(progress, [0, 1], [60, 0]),
+        translateY: 0,
+        scale: interpolate(progress, [0, 1], [0.9, 1]),
+      };
+    default:
+      return { translateX: 0, translateY: 0, scale: 1 };
+  }
+}
+
 const SceneDisplay: React.FC<SceneDisplayProps> = ({
   scene,
+  sceneIndex,
+  durationFrames,
   style,
   pillColor,
 }) => {
@@ -67,61 +109,84 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
 
   const isBrainrot = style === "brainrot";
 
-  // Scene entry animation — scale in
-  const entryScale = spring({
-    frame,
-    fps,
-    config: { damping: 14, mass: 0.5, stiffness: 180 },
+  // Scene entry — fast fade in
+  const entryOpacity = interpolate(frame, [0, 4], [0, 1], {
+    extrapolateRight: "clamp",
   });
-  const scaleVal = interpolate(entryScale, [0, 1], [0.85, 1]);
-  const entryOpacity = interpolate(entryScale, [0, 1], [0, 1]);
+
+  // Scene exit — quick fade out
+  const exitStart = Math.max(durationFrames - 4, 1);
+  const exitOpacity = interpolate(frame, [exitStart, durationFrames], [1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
+  // Flash transition at scene start (white flash, 3 frames)
+  const flashOpacity = interpolate(frame, [0, 1, 3], [0.35, 0.2, 0], {
+    extrapolateRight: "clamp",
+  });
+
+  const combinedOpacity = entryOpacity * exitOpacity;
 
   return (
     <AbsoluteFill>
+      {/* White flash transition */}
+      {frame < 3 && (
+        <AbsoluteFill
+          style={{
+            backgroundColor: "#fff",
+            opacity: flashOpacity,
+            zIndex: 20,
+          }}
+        />
+      )}
+
       {/* Layer A — Big overlay text (center of screen) */}
       <div
         style={{
           position: "absolute",
-          top: "30%",
+          top: "28%",
           left: 0,
           right: 0,
-          bottom: "25%",
+          bottom: "22%",
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "center",
           alignContent: "center",
-          gap: "12px 16px",
+          gap: "10px 14px",
           padding: "0 5%",
-          transform: `scale(${scaleVal})`,
-          opacity: entryOpacity,
+          opacity: combinedOpacity,
         }}
       >
         {scene.wordTimings.map((wt, i) => {
           const isActive = timeMs >= wt.startMs && timeMs < wt.endMs;
           const hasAppeared = timeMs >= wt.startMs;
 
-          // Per-word pop animation
-          const wordStartLocalFrame = Math.round(
-            ((wt.startMs - scene.startMs) / 1000) * fps
-          );
-          const wordPop = spring({
-            frame: Math.max(0, frame - wordStartLocalFrame),
+          // Staggered entry: each word enters 6 frames after the previous
+          const wordEntryFrame = i * 6;
+          const wordSpring = spring({
+            frame: Math.max(0, frame - wordEntryFrame),
             fps,
-            config: { damping: 10, mass: 0.4, stiffness: 200 },
+            config: { damping: 10, mass: 0.35, stiffness: 220 },
           });
-          const wordScale = isActive
-            ? interpolate(wordPop, [0, 1], [0.9, 1.05])
-            : hasAppeared
-              ? 1
-              : 0.8;
-          const wordOpacity = hasAppeared ? 1 : 0.3;
+
+          // Get per-word animation pattern
+          const anim = getWordAnimation(i, wordSpring);
+
+          // Active word shake effect
+          const shakeX =
+            isActive && frame > wordEntryFrame + 4
+              ? Math.sin(frame * 4) * 3
+              : 0;
+
+          const wordOpacity = frame >= wordEntryFrame ? 1 : 0;
 
           return (
             <span
               key={i}
               style={{
                 display: "inline-block",
-                transform: `scale(${wordScale})`,
+                transform: `translate(${anim.translateX + shakeX}px, ${anim.translateY}px) scale(${anim.scale})`,
                 transformOrigin: "center center",
                 // Pill highlight on active word
                 backgroundColor: isActive ? pillColor : "transparent",
@@ -143,7 +208,7 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
                   "3px -3px 0 rgba(0,0,0,0.9), -3px 3px 0 rgba(0,0,0,0.9), " +
                   "0 4px 8px rgba(0,0,0,0.7)",
                 opacity: wordOpacity,
-                transition: "background-color 0.1s",
+                transition: "background-color 0.08s",
               }}
             >
               {wt.word}
@@ -157,11 +222,11 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
         style={{
           position: "absolute",
           bottom: "6%",
-          left: "5%",
-          right: "5%",
+          left: "4%",
+          right: "4%",
           display: "flex",
           justifyContent: "center",
-          opacity: entryOpacity,
+          opacity: combinedOpacity,
         }}
       >
         <div

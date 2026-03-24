@@ -3,6 +3,7 @@ import type { Caption } from "@remotion/captions";
 // === Scene system for TikTok-style rendering ===
 
 export interface Scene {
+  sceneIndex: number;
   sentence: string;
   keyWords: string[];
   startMs: number;
@@ -25,21 +26,60 @@ const SKIP_WORDS = new Set([
   "whom", "this", "that", "these", "those", "it", "its", "they",
   "them", "their", "we", "us", "our", "you", "your", "he", "him",
   "his", "she", "her", "my", "me", "i",
+  // Common verbs that aren't impactful as overlay text
+  "think", "make", "take", "give", "come", "know", "want", "need",
+  "tell", "mean", "keep", "help", "turn", "show", "call", "work",
+  "seem", "look", "feel", "find", "hear", "hand", "lets", "let's",
+  "well", "really", "actually", "basically", "literally", "pretty",
+  "much", "many", "even", "still", "already", "getting", "going",
+  "being", "doing", "having", "making", "taking", "coming",
 ]);
 
-function extractKeyWords(sentence: string, max = 5): string[] {
+function cleanWord(w: string): string {
+  return w.replace(/[^a-zA-Z']/g, "");
+}
+
+function extractKeyWords(sentence: string, max = 4, keyTerms: string[] = []): string[] {
   const words = sentence.split(/\s+/).filter(Boolean);
-  const candidates = words.filter(
-    (w) => w.length > 3 && !SKIP_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ""))
-  );
-  // Take up to `max` evenly spaced from candidates to cover the sentence
-  if (candidates.length <= max) return candidates;
-  const step = candidates.length / max;
-  const picked: string[] = [];
-  for (let i = 0; i < max; i++) {
-    picked.push(candidates[Math.floor(i * step)]);
+
+  // First priority: words matching segment keyTerms
+  const keyTermSet = new Set(keyTerms.map((t) => t.toLowerCase()));
+  const fromKeyTerms: string[] = [];
+  const otherCandidates: string[] = [];
+
+  for (const w of words) {
+    const cleaned = cleanWord(w);
+    if (cleaned.length < 4) continue;
+    if (SKIP_WORDS.has(cleaned.toLowerCase())) continue;
+
+    // Check if this word matches any key term
+    if (keyTermSet.has(cleaned.toLowerCase()) ||
+        keyTerms.some((t) => t.toLowerCase().includes(cleaned.toLowerCase()) && cleaned.length >= 4)) {
+      fromKeyTerms.push(cleaned);
+    } else {
+      otherCandidates.push(cleaned);
+    }
   }
-  return picked;
+
+  // Combine: key terms first, then fill remaining with other candidates
+  const combined = [...fromKeyTerms];
+  for (const c of otherCandidates) {
+    if (combined.length >= max) break;
+    if (!combined.some((x) => x.toLowerCase() === c.toLowerCase())) {
+      combined.push(c);
+    }
+  }
+
+  // If we got nothing, take the 2 longest words from the sentence
+  if (combined.length === 0) {
+    const sorted = words
+      .map((w) => cleanWord(w))
+      .filter((w) => w.length >= 3)
+      .sort((a, b) => b.length - a.length);
+    return sorted.slice(0, 2);
+  }
+
+  return combined.slice(0, max);
 }
 
 function splitIntoSentences(content: string): string[] {
@@ -64,7 +104,8 @@ function splitIntoSentences(content: string): string[] {
 
 export function generateSceneData(
   content: string,
-  wordsPerSecond = 2.8
+  wordsPerSecond = 2.8,
+  keyTerms: string[] = []
 ): Scene[] {
   const sentences = splitIntoSentences(content);
   if (sentences.length === 0) return [];
@@ -72,13 +113,14 @@ export function generateSceneData(
   const scenes: Scene[] = [];
   let currentMs = 200; // lead-in pause
 
-  for (const sentence of sentences) {
+  for (let idx = 0; idx < sentences.length; idx++) {
+    const sentence = sentences[idx];
     const words = sentence.split(/\s+/).filter(Boolean);
     const durationMs = (words.length / wordsPerSecond) * 1000;
     const startMs = currentMs;
     const endMs = currentMs + durationMs;
 
-    const keyWords = extractKeyWords(sentence);
+    const keyWords = extractKeyWords(sentence, 4, keyTerms);
 
     // Generate timing for each key word — evenly spaced across the scene
     const kwDuration = durationMs / Math.max(keyWords.length, 1);
@@ -89,6 +131,7 @@ export function generateSceneData(
     }));
 
     scenes.push({
+      sceneIndex: idx,
       sentence,
       keyWords,
       startMs: Math.round(startMs),

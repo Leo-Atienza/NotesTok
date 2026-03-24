@@ -22,6 +22,8 @@ export interface Segment {
   scholarContent?: string;
   imagePrompt?: string;
   imageUrl?: string;
+  sceneImagePrompts?: string[];
+  sceneImageUrls?: string[];
 }
 
 export interface QuizCheckpoint {

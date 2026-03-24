@@ -17,6 +17,7 @@ interface VideoPlayerProps {
   mode: "brainrot" | "fireship";
   onComplete: () => void;
   isPaused?: boolean;
+  sceneImages?: string[];
 }
 
 const FPS = 30;
@@ -28,6 +29,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   mode,
   onComplete,
   isPaused,
+  sceneImages,
 }) => {
   const playerRef = useRef<PlayerRef>(null);
 
@@ -40,8 +42,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     () => ({
       segment,
       mode,
+      sceneImages,
     }),
-    [segment, mode]
+    [segment, mode, sceneImages]
   );
 
   // Handle pause/resume from parent (e.g., quiz gates)
@@ -79,9 +82,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }}
     >
       <div
+        className="video-player-container"
         style={{
           width: "100%",
-          maxWidth: 480,
           aspectRatio: "9 / 16",
           borderRadius: 16,
           overflow: "hidden",

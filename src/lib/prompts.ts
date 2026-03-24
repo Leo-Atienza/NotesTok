@@ -33,7 +33,9 @@ Given the content analysis below, generate a lesson manifest with these rules:
 10. Provide a clear explanation (shown after answering)
 11. Assign XP rewards: 10 for easy, 15 for medium, 25 for hard questions
 12. Calculate totalXP as the sum of all quiz xpRewards
-13. For EVERY segment, include an imagePrompt: a vivid description for AI image generation. Describe a scene, diagram, character, or visual metaphor that illustrates the concept. Be specific about colors, style, and composition. Do NOT include any text in the image. Think TikTok educational content — dramatic, eye-catching, colorful illustrations that grab attention.
+13. For EVERY segment, include an imagePrompt AND a sceneImagePrompts array:
+   - imagePrompt: One main image for the segment (fallback). Dark, moody, cinematic illustration.
+   - sceneImagePrompts: An array of 3-6 prompts, one per sentence in the content. Each describes a DIFFERENT dramatic, cinematic illustrated scene matching what that sentence says. Think animated storytelling like TikTok — characters in action, objects, dramatic lighting, deep shadows, vivid colors. NOT generic educational diagrams or stock photos. Each scene should feel like a frame from an animated short film. Describe specific characters, actions, environments, camera angles. NEVER include text or words in images.
 
 The lesson ID should be a kebab-case slug based on the topic (e.g., "bio-101-photosynthesis").
 
