@@ -1,0 +1,72 @@
+import { NextResponse } from "next/server";
+import { findOrFetchMedia, findMusic, findSfx, recordUsage } from "@/lib/media-store";
+import type { MediaAssetResult } from "@/lib/media-store";
+
+interface ResolveSegment {
+  id: string;
+  keyTerms: string[];
+  title: string;
+  type: string;
+}
+
+interface ResolveRequest {
+  segments: ResolveSegment[];
+  subject: string;
+}
+
+interface SegmentMediaResult {
+  videos: MediaAssetResult[];
+  photos: MediaAssetResult[];
+}
+
+export async function POST(request: Request) {
+  try {
+    const body: ResolveRequest = await request.json();
+    const { segments, subject } = body;
+
+    if (!segments || !Array.isArray(segments)) {
+      return NextResponse.json({ error: "segments array required" }, { status: 400 });
+    }
+
+    // Resolve media for all segments in parallel
+    const mediaPromises = segments.map(async (seg) => {
+      const [videos, photos] = await Promise.allSettled([
+        findOrFetchMedia(seg.keyTerms, seg.title, seg.type, subject, "video"),
+        findOrFetchMedia(seg.keyTerms, seg.title, seg.type, subject, "photo"),
+      ]);
+
+      const result: SegmentMediaResult = {
+        videos: videos.status === "fulfilled" ? videos.value : [],
+        photos: photos.status === "fulfilled" ? photos.value : [],
+      };
+
+      // Record usage for DB assets (fire-and-forget)
+      for (const v of result.videos) {
+        if (v.assetId) recordUsage(v.assetId);
+      }
+      for (const p of result.photos) {
+        if (p.assetId) recordUsage(p.assetId);
+      }
+
+      return { segmentId: seg.id, media: result };
+    });
+
+    const results = await Promise.allSettled(mediaPromises);
+
+    const segmentMedia: Record<string, SegmentMediaResult> = {};
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        segmentMedia[r.value.segmentId] = r.value.media;
+      }
+    }
+
+    // Resolve music and SFX
+    const music = findMusic(subject);
+    const sfx = findSfx("whoosh");
+
+    return NextResponse.json({ segmentMedia, music, sfx });
+  } catch (error) {
+    console.error("Media resolve error:", error);
+    return NextResponse.json({ segmentMedia: {}, music: null, sfx: null });
+  }
+}

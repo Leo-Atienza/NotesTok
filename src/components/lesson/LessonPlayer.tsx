@@ -57,31 +57,94 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
   // Per-scene images: segmentId → array of image URLs
   const [sceneImages, setSceneImages] = useState<Record<string, string[]>>({});
   const [imagesLoading, setImagesLoading] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaLoadingStep, setMediaLoadingStep] = useState("");
+  const [enrichedManifest, setEnrichedManifest] = useState<LessonManifest>(manifest);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
 
-  // Start lesson after mode is selected
+  // Start lesson after mode is selected AND media is resolved
   useEffect(() => {
-    if (videoMode && !hasStartedRef.current) {
+    if (videoMode && !hasStartedRef.current && !mediaLoading) {
       hasStartedRef.current = true;
-      player.startLesson(manifest);
+      player.startLesson(enrichedManifest);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest, videoMode]);
+  }, [enrichedManifest, videoMode, mediaLoading]);
 
-  // Generate per-scene images when a video mode is selected
+  // Resolve media + voiceover when a video mode is selected
   useEffect(() => {
     if (!videoMode || videoMode === "classic") return;
-    if (Object.keys(sceneImages).length > 0 || Object.keys(segmentImages).length > 0) return;
+    if (hasStartedRef.current) return;
 
-    setImagesLoading(true);
+    setMediaLoading(true);
 
     (async () => {
-      for (const segment of manifest.segments) {
-        const prompts = segment.sceneImagePrompts;
+      const updated = { ...manifest, segments: manifest.segments.map((s) => ({ ...s })) };
 
+      // Phase 1: Resolve stock media (videos/photos from Pexels/DB)
+      setMediaLoadingStep("Finding visual materials...");
+      try {
+        const mediaRes = await fetch("/api/media/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            segments: manifest.segments.map((s) => ({
+              id: s.id,
+              keyTerms: s.keyTerms,
+              title: s.title,
+              type: s.type,
+            })),
+            subject: manifest.subject,
+          }),
+        });
+        const mediaData = await mediaRes.json();
+
+        // Attach media to segments
+        if (mediaData.segmentMedia) {
+          for (const seg of updated.segments) {
+            const media = mediaData.segmentMedia[seg.id];
+            if (!media) continue;
+            if (media.videos?.[0]?.url) seg.backgroundVideoUrl = media.videos[0].url;
+            if (media.photos?.[0]?.url) seg.backgroundPhotoUrl = media.photos[0].url;
+            if (media.photos?.length > 1) {
+              seg.scenePhotoUrls = media.photos.map((p: { url: string }) => p.url);
+            }
+          }
+          if (mediaData.music) updated.backgroundMusicUrl = mediaData.music;
+          if (mediaData.sfx) updated.transitionSfxUrl = mediaData.sfx;
+        }
+      } catch {
+        // Graceful — continue without stock media
+      }
+
+      // Phase 2: Generate voiceover (parallel with Gemini images)
+      setMediaLoadingStep("Generating voiceover...");
+      const [voiceoverResult] = await Promise.allSettled([
+        fetch("/api/media/voiceover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            segments: manifest.segments.map((s) => ({ id: s.id, content: s.content })),
+          }),
+        }).then((r) => r.json()),
+      ]);
+
+      if (voiceoverResult.status === "fulfilled" && voiceoverResult.value.voiceovers) {
+        for (const seg of updated.segments) {
+          const voUrl = voiceoverResult.value.voiceovers[seg.id];
+          if (voUrl) seg.voiceoverUrl = voUrl;
+        }
+      }
+
+      // Phase 3: Also generate Gemini images as fallback (existing behavior)
+      setMediaLoadingStep("Preparing visuals...");
+      for (const segment of updated.segments) {
+        // Skip if we already have stock media
+        if (segment.backgroundVideoUrl || segment.backgroundPhotoUrl) continue;
+
+        const prompts = segment.sceneImagePrompts;
         if (prompts && prompts.length > 0) {
-          // Fire up to 3 scene image requests in parallel per segment
           const batchSize = 3;
           for (let i = 0; i < prompts.length; i += batchSize) {
             const batch = prompts.slice(i, i + batchSize);
@@ -94,7 +157,6 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
                 }).then((r) => r.json())
               )
             );
-            // Store each result as it comes in
             const newUrls: string[] = [];
             for (const result of results) {
               if (result.status === "fulfilled" && result.value.imageUrl) {
@@ -108,10 +170,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               }));
             }
           }
-          // Short pause between segments
           await new Promise((r) => setTimeout(r, 800));
         } else if (segment.imagePrompt) {
-          // Fallback: single image per segment
           try {
             const res = await fetch("/api/generate-image", {
               method: "POST",
@@ -122,24 +182,29 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             if (data.imageUrl) {
               setSegmentImages((prev) => ({ ...prev, [segment.id]: data.imageUrl }));
             }
-          } catch {
-            // Graceful fallback
-          }
+          } catch { /* Graceful fallback */ }
           await new Promise((r) => setTimeout(r, 1000));
         }
       }
-      setImagesLoading(false);
+
+      setEnrichedManifest(updated);
+      setMediaLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoMode]);
 
-  // Handle TTS narration
+  // Handle TTS narration (skip when ElevenLabs voiceover is active)
   useEffect(() => {
     if (
       player.playerState === "playing" &&
       player.currentSegment &&
       !isMuted
     ) {
+      // Skip Web Speech if ElevenLabs voiceover is available — VideoPlayer handles it
+      if (player.currentSegment.voiceoverUrl && videoMode !== "classic") {
+        return;
+      }
+
       const content =
         player.panicExplanation ||
         (player.isScholarMode && scholarContents[player.currentSegment.id]
@@ -347,6 +412,28 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     );
   }
 
+  // Media loading screen
+  if (mediaLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background to-muted">
+        <div className="text-center space-y-6 max-w-md animate-fade-in">
+          <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-2">Preparing Your Lesson</h2>
+            <p className="text-sm text-muted-foreground">{mediaLoadingStep}</p>
+          </div>
+          <div className="flex justify-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: "0ms" }} />
+            <span className="w-2 h-2 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: "200ms" }} />
+            <span className="w-2 h-2 rounded-full bg-primary/40 animate-pulse" style={{ animationDelay: "400ms" }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Completion-based progress: segment N of T = N/T after completing segment N
   // During a segment, show partial progress toward next milestone
   const baseProgress = (player.currentSegmentIndex / player.totalSegments) * 100;
@@ -490,6 +577,9 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
               player.playerState === "panic-loading"
             }
             sceneImages={sceneImages[player.currentSegment.id] || undefined}
+            voiceoverUrl={player.currentSegment.voiceoverUrl}
+            backgroundMusicUrl={enrichedManifest.backgroundMusicUrl}
+            transitionSfxUrl={enrichedManifest.transitionSfxUrl}
           />
         </div>
       ) : (

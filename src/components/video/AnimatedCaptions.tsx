@@ -30,7 +30,6 @@ export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
         const durationFrames = Math.round(
           ((scene.endMs - scene.startMs) / 1000) * fps
         );
-        const pillColor = PILL_COLORS[sceneIndex % PILL_COLORS.length];
 
         return (
           <Sequence
@@ -43,7 +42,6 @@ export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
               sceneIndex={sceneIndex}
               durationFrames={durationFrames}
               style={style}
-              pillColor={pillColor}
             />
           </Sequence>
         );
@@ -57,75 +55,6 @@ interface SceneDisplayProps {
   sceneIndex: number;
   durationFrames: number;
   style: "brainrot" | "fireship";
-  pillColor: string;
-}
-
-// 8 word animation patterns — more variety for TikTok feel
-function getWordAnimation(
-  wordIndex: number,
-  progress: number
-): { translateX: number; translateY: number; scale: number; rotate: number } {
-  const pattern = wordIndex % 8;
-  switch (pattern) {
-    case 0: // Slam down
-      return {
-        translateX: 0,
-        translateY: interpolate(progress, [0, 1], [-50, 0]),
-        scale: interpolate(progress, [0, 0.5, 1], [1.4, 1.05, 1]),
-        rotate: 0,
-      };
-    case 1: // Pop from center
-      return {
-        translateX: 0,
-        translateY: 0,
-        scale: interpolate(progress, [0, 0.4, 1], [0.2, 1.15, 1]),
-        rotate: 0,
-      };
-    case 2: // Slide from left
-      return {
-        translateX: interpolate(progress, [0, 1], [-80, 0]),
-        translateY: 0,
-        scale: interpolate(progress, [0, 1], [0.85, 1]),
-        rotate: 0,
-      };
-    case 3: // Slide from right
-      return {
-        translateX: interpolate(progress, [0, 1], [80, 0]),
-        translateY: 0,
-        scale: interpolate(progress, [0, 1], [0.85, 1]),
-        rotate: 0,
-      };
-    case 4: // Flip in (rotation)
-      return {
-        translateX: 0,
-        translateY: interpolate(progress, [0, 1], [-20, 0]),
-        scale: interpolate(progress, [0, 0.5, 1], [0.5, 1.1, 1]),
-        rotate: interpolate(progress, [0, 1], [-15, 0]),
-      };
-    case 5: // Bounce overshoot
-      return {
-        translateX: 0,
-        translateY: interpolate(progress, [0, 0.4, 0.7, 1], [-60, 5, -3, 0]),
-        scale: interpolate(progress, [0, 0.4, 0.7, 1], [0.6, 1.1, 0.98, 1]),
-        rotate: 0,
-      };
-    case 6: // Zoom from zero
-      return {
-        translateX: 0,
-        translateY: 0,
-        scale: interpolate(progress, [0, 0.5, 1], [0, 1.2, 1]),
-        rotate: interpolate(progress, [0, 0.3, 1], [10, -3, 0]),
-      };
-    case 7: // Rise up
-      return {
-        translateX: 0,
-        translateY: interpolate(progress, [0, 1], [40, 0]),
-        scale: interpolate(progress, [0, 0.6, 1], [0.7, 1.05, 1]),
-        rotate: 0,
-      };
-    default:
-      return { translateX: 0, translateY: 0, scale: 1, rotate: 0 };
-  }
 }
 
 const SceneDisplay: React.FC<SceneDisplayProps> = ({
@@ -133,15 +62,25 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
   sceneIndex,
   durationFrames,
   style,
-  pillColor,
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const timeMs = (frame / fps) * 1000 + scene.startMs;
 
   const isBrainrot = style === "brainrot";
+  const words = scene.allWordTimings;
 
-  // Scene entry/exit
+  // Find the currently active word
+  const activeWordIndex = words.findIndex(
+    (wt) => timeMs >= wt.startMs && timeMs < wt.endMs
+  );
+  // If past all words, show the last one (hold phase)
+  const displayIndex = activeWordIndex >= 0 ? activeWordIndex : words.length - 1;
+  const activeWord = words[displayIndex];
+
+  if (!activeWord) return null;
+
+  // Scene entry/exit fade
   const entryOpacity = interpolate(frame, [0, 3], [0, 1], {
     extrapolateRight: "clamp",
   });
@@ -152,84 +91,72 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
   });
   const combinedOpacity = entryOpacity * exitOpacity;
 
+  // Word entry animation — spring scale
+  const wordLocalFrame = Math.round(((activeWord.startMs - scene.startMs) / 1000) * fps);
+  const wordProgress = spring({
+    frame: Math.max(0, frame - wordLocalFrame),
+    fps,
+    config: { damping: 8, mass: 0.3, stiffness: 280 },
+  });
+
+  const wordScale = interpolate(wordProgress, [0, 0.5, 1], [0.3, 1.15, 1]);
+
+  // Subtle shake on active word
+  const shakeX = activeWordIndex >= 0 ? Math.sin(frame * 0.8) * 3 : 0;
+
+  // Color cycling
+  const pillColor = PILL_COLORS[(sceneIndex * 3 + displayIndex) % PILL_COLORS.length];
+
   return (
     <AbsoluteFill>
-      {/* Big overlay words — positioned in bottom 35% for image-first layout */}
+      {/* Big single word — centered at ~40% from top */}
       <div
         style={{
           position: "absolute",
-          top: isBrainrot ? "55%" : "50%",
+          top: "30%",
           left: 0,
           right: 0,
-          bottom: isBrainrot ? "8%" : "12%",
+          bottom: "30%",
           display: "flex",
-          flexWrap: "wrap",
           justifyContent: "center",
-          alignContent: "center",
-          gap: "8px 12px",
-          padding: "0 5%",
+          alignItems: "center",
           opacity: combinedOpacity,
         }}
       >
-        {scene.wordTimings.map((wt, i) => {
-          const isActive = timeMs >= wt.startMs && timeMs < wt.endMs;
-
-          // Faster stagger: 4 frames between words (was 6)
-          const wordEntryFrame = i * 4;
-          const wordSpring = spring({
-            frame: Math.max(0, frame - wordEntryFrame),
-            fps,
-            config: { damping: 8, mass: 0.3, stiffness: 260 },
-          });
-
-          const anim = getWordAnimation(i, wordSpring);
-
-          // Active word pulse
-          const pulseScale = isActive
-            ? 1 + Math.sin(frame * 6) * 0.03
-            : 1;
-
-          const wordOpacity = frame >= wordEntryFrame ? 1 : 0;
-
-          return (
-            <span
-              key={i}
-              style={{
-                display: "inline-block",
-                transform: `translate(${anim.translateX}px, ${anim.translateY}px) scale(${anim.scale * pulseScale}) rotate(${anim.rotate}deg)`,
-                transformOrigin: "center center",
-                // Pill highlight on active word with glow
-                backgroundColor: isActive ? pillColor : "transparent",
-                borderRadius: 12,
-                padding: isActive ? "8px 20px" : "6px 8px",
-                boxShadow: isActive
-                  ? `0 0 24px ${pillColor}80, 0 0 48px ${pillColor}40`
-                  : "none",
-                // Text
-                color: "#FFFFFF",
-                fontSize: isBrainrot ? 80 : 64,
-                fontWeight: 900,
-                fontFamily: isBrainrot
-                  ? "system-ui, -apple-system, 'Segoe UI', sans-serif"
-                  : "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-                textTransform: "uppercase",
-                lineHeight: 1.15,
-                letterSpacing: isBrainrot ? "-0.02em" : "0.02em",
-                // Heavy text-stroke for readability over images
-                textShadow:
-                  "3px 3px 0 rgba(0,0,0,1), -3px -3px 0 rgba(0,0,0,1), " +
-                  "3px -3px 0 rgba(0,0,0,1), -3px 3px 0 rgba(0,0,0,1), " +
-                  "0 0 8px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.7)",
-                opacity: wordOpacity,
-              }}
-            >
-              {wt.word}
-            </span>
-          );
-        })}
+        <span
+          style={{
+            display: "inline-block",
+            transform: `scale(${wordScale}) translateX(${shakeX}px)`,
+            transformOrigin: "center center",
+            // Key terms get colored pill, others get clean white
+            backgroundColor: activeWord.isKeyTerm ? pillColor : "transparent",
+            borderRadius: 16,
+            padding: activeWord.isKeyTerm ? "12px 32px" : "8px 16px",
+            boxShadow: activeWord.isKeyTerm
+              ? `0 0 30px ${pillColor}80, 0 0 60px ${pillColor}40`
+              : "none",
+            // Text
+            color: "#FFFFFF",
+            fontSize: isBrainrot ? 110 : 90,
+            fontWeight: 900,
+            fontFamily: isBrainrot
+              ? "system-ui, -apple-system, 'Segoe UI', sans-serif"
+              : "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+            textTransform: "uppercase",
+            lineHeight: 1.1,
+            letterSpacing: isBrainrot ? "-0.03em" : "0.02em",
+            // Heavy text-stroke for readability over any background
+            textShadow:
+              "4px 4px 0 rgba(0,0,0,1), -4px -4px 0 rgba(0,0,0,1), " +
+              "4px -4px 0 rgba(0,0,0,1), -4px 4px 0 rgba(0,0,0,1), " +
+              "0 0 12px rgba(0,0,0,0.9), 0 6px 16px rgba(0,0,0,0.7)",
+          }}
+        >
+          {activeWord.word}
+        </span>
       </div>
 
-      {/* Bottom subtitle — full sentence with word highlight */}
+      {/* Bottom subtitle — full sentence for context */}
       <div
         style={{
           position: "absolute",

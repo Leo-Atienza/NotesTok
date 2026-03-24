@@ -1,6 +1,7 @@
 import React from "react";
 import {
   AbsoluteFill,
+  OffthreadVideo,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
@@ -13,6 +14,9 @@ import type { Segment } from "@/lib/types";
 interface FireshipModeProps {
   segment: Segment;
   sceneImages?: string[];
+  backgroundVideoUrl?: string;
+  backgroundPhotoUrl?: string;
+  scenePhotoUrls?: string[];
 }
 
 // Code lines for atmospheric background
@@ -38,6 +42,9 @@ const CODE_LINES = [
 export const FireshipMode: React.FC<FireshipModeProps> = ({
   segment,
   sceneImages = [],
+  backgroundVideoUrl,
+  backgroundPhotoUrl,
+  scenePhotoUrls = [],
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -126,8 +133,19 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
         overflow: "hidden",
       }}
     >
-      {/* === IMAGE-FIRST: Full-screen scene image behind dark overlay === */}
-      {currentSceneImage && (
+      {/* === Stock video background (dimmed) === */}
+      {backgroundVideoUrl && (
+        <AbsoluteFill style={{ opacity: 0.2 }}>
+          <OffthreadVideo
+            src={backgroundVideoUrl}
+            muted
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </AbsoluteFill>
+      )}
+
+      {/* === Scene image behind dark overlay === */}
+      {!backgroundVideoUrl && currentSceneImage && (
         <>
           {prevSceneImage &&
             prevSceneImage !== currentSceneImage &&
@@ -139,11 +157,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
                 />
               </AbsoluteFill>
             )}
-          <AbsoluteFill
-            style={{
-              opacity: transitionProgress * 0.35,
-            }}
-          >
+          <AbsoluteFill style={{ opacity: transitionProgress * 0.35 }}>
             <img
               src={currentSceneImage}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -155,7 +169,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
       {/* Dark overlay to maintain code editor aesthetic */}
       <AbsoluteFill
         style={{
-          background: currentSceneImage
+          background: (backgroundVideoUrl || currentSceneImage)
             ? "linear-gradient(160deg, rgba(13,17,23,0.75) 0%, rgba(22,27,34,0.8) 40%, rgba(28,35,51,0.85) 100%)"
             : "transparent",
         }}
@@ -330,24 +344,19 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
       {/* Scene-based captions */}
       <AnimatedCaptions scenes={scenes} style="fireship" />
 
-      {/* Key terms badges */}
+      {/* Key terms badges — typewriter animation */}
       <div
         style={{
           position: "absolute",
           left: "3%",
-          top: "42%",
+          top: "38%",
           display: "flex",
           flexDirection: "column",
-          gap: 8,
+          gap: 10,
         }}
       >
         {segment.keyTerms.map((term, i) => {
           const termAppearFrame = keyTermTimings[i];
-          const termScale = spring({
-            frame: Math.max(0, frame - termAppearFrame),
-            fps,
-            config: { damping: 10, mass: 0.4 },
-          });
           const termOpacity =
             frame >= termAppearFrame
               ? interpolate(
@@ -358,26 +367,42 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
                 )
               : 0;
 
+          // Typewriter: reveal characters one at a time
+          const charsElapsed = frame - termAppearFrame;
+          const charsToShow = Math.min(
+            Math.max(0, Math.floor(charsElapsed / 2)),
+            term.length
+          );
+          const displayText = frame >= termAppearFrame
+            ? term.slice(0, charsToShow)
+            : "";
+          const showCursor = frame >= termAppearFrame && charsToShow < term.length;
+
           return (
             <span
               key={term}
               style={{
                 display: "inline-block",
-                transform: `scale(${termScale})`,
                 transformOrigin: "left center",
                 opacity: termOpacity,
-                padding: "4px 10px",
-                borderRadius: 6,
-                backgroundColor: "rgba(88,166,255,0.12)",
-                border: "1px solid rgba(88,166,255,0.25)",
+                padding: "6px 14px",
+                borderRadius: 8,
+                backgroundColor: "rgba(88,166,255,0.15)",
+                border: "1px solid rgba(88,166,255,0.3)",
                 color: "#58a6ff",
-                fontSize: 12,
-                fontWeight: 600,
-                fontFamily: "'SF Mono', monospace",
+                fontSize: 16,
+                fontWeight: 700,
+                fontFamily: "'SF Mono', 'Fira Code', monospace",
                 whiteSpace: "nowrap",
+                boxShadow: "0 0 12px rgba(88,166,255,0.15)",
               }}
             >
-              {term}
+              {displayText}
+              {showCursor && (
+                <span style={{ opacity: frame % 15 < 8 ? 1 : 0, color: "#79c0ff" }}>
+                  |
+                </span>
+              )}
             </span>
           );
         })}

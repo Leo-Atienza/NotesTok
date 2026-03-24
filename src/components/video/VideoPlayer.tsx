@@ -18,6 +18,9 @@ interface VideoPlayerProps {
   onComplete: () => void;
   isPaused?: boolean;
   sceneImages?: string[];
+  voiceoverUrl?: string;
+  backgroundMusicUrl?: string;
+  transitionSfxUrl?: string;
 }
 
 const FPS = 30;
@@ -30,8 +33,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onComplete,
   isPaused,
   sceneImages,
+  voiceoverUrl,
+  backgroundMusicUrl,
+  transitionSfxUrl,
 }) => {
   const playerRef = useRef<PlayerRef>(null);
+  const voiceoverRef = useRef<HTMLAudioElement | null>(null);
+  const musicRef = useRef<HTMLAudioElement | null>(null);
 
   const durationInFrames = useMemo(
     () => getSegmentDurationInFrames(segment.content, FPS),
@@ -43,6 +51,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       segment,
       mode,
       sceneImages,
+      backgroundVideoUrl: segment.backgroundVideoUrl,
+      backgroundPhotoUrl: segment.backgroundPhotoUrl,
+      scenePhotoUrls: segment.scenePhotoUrls,
     }),
     [segment, mode, sceneImages]
   );
@@ -52,15 +63,63 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!playerRef.current) return;
     if (isPaused) {
       playerRef.current.pause();
+      voiceoverRef.current?.pause();
+      musicRef.current?.pause();
     } else {
       playerRef.current.play();
+      voiceoverRef.current?.play();
+      musicRef.current?.play();
     }
   }, [isPaused]);
 
-  // Listen for video end
+  // Voiceover audio sync
+  useEffect(() => {
+    if (!voiceoverUrl) return;
+
+    const audio = new Audio(voiceoverUrl);
+    audio.volume = 1;
+    voiceoverRef.current = audio;
+
+    // Play when player starts
+    const timer = setTimeout(() => {
+      audio.play().catch(() => {});
+    }, 200);
+
+    audio.addEventListener("ended", () => {
+      onComplete();
+    });
+
+    return () => {
+      clearTimeout(timer);
+      audio.pause();
+      audio.removeAttribute("src");
+      voiceoverRef.current = null;
+    };
+  }, [voiceoverUrl, onComplete]);
+
+  // Background music
+  useEffect(() => {
+    if (!backgroundMusicUrl) return;
+
+    const audio = new Audio(backgroundMusicUrl);
+    audio.loop = true;
+    audio.volume = voiceoverUrl ? 0.08 : 0.15; // Duck when voiceover active
+    musicRef.current = audio;
+    audio.play().catch(() => {});
+
+    return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      musicRef.current = null;
+    };
+  }, [backgroundMusicUrl, voiceoverUrl]);
+
+  // Listen for video end (only when no voiceover — voiceover handles completion)
   const handleEnded = useCallback(() => {
-    onComplete();
-  }, [onComplete]);
+    if (!voiceoverUrl) {
+      onComplete();
+    }
+  }, [onComplete, voiceoverUrl]);
 
   useEffect(() => {
     const player = playerRef.current;

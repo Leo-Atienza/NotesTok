@@ -5,7 +5,7 @@ import { VideoPlayer } from "@/components/video/VideoPlayer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Brain, FileText, Loader2 } from "lucide-react";
-import type { LessonManifest } from "@/lib/types";
+import type { LessonManifest, Segment } from "@/lib/types";
 import { DEMO_LESSON_ID } from "@/lib/demo-lesson";
 import { getDemoImages } from "@/lib/demo-images";
 import { getLessonImages, saveLessonImages } from "@/lib/lesson-store";
@@ -22,8 +22,91 @@ export function VideosView({ manifest }: VideosViewProps) {
   const [sceneImages, setSceneImages] = useState<Record<string, string[]>>({});
   const [imagesLoading, setImagesLoading] = useState(false);
   const [imageProgress, setImageProgress] = useState({ done: 0, total: 0 });
+  const [enrichedSegments, setEnrichedSegments] = useState<Segment[]>(manifest.segments);
+  const [enrichedManifest, setEnrichedManifest] = useState<LessonManifest>(manifest);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("");
 
-  // Load images on mount
+  // Resolve stock media + voiceover on mount
+  useEffect(() => {
+    if (manifest.id === DEMO_LESSON_ID) return; // Demo uses pre-baked images
+
+    let cancelled = false;
+
+    (async () => {
+      setMediaLoading(true);
+      const updated = manifest.segments.map((s) => ({ ...s }));
+      const updatedManifest = { ...manifest, segments: updated };
+
+      // Phase 1: Resolve stock media
+      setLoadingStep("Finding stock media...");
+      try {
+        const mediaRes = await fetch("/api/media/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            segments: manifest.segments.map((s) => ({
+              id: s.id,
+              keyTerms: s.keyTerms,
+              title: s.title,
+              type: s.type,
+            })),
+            subject: manifest.subject,
+          }),
+        });
+        const mediaData = await mediaRes.json();
+
+        if (!cancelled && mediaData.segmentMedia) {
+          for (const seg of updated) {
+            const media = mediaData.segmentMedia[seg.id];
+            if (!media) continue;
+            if (media.videos?.[0]?.url) seg.backgroundVideoUrl = media.videos[0].url;
+            if (media.photos?.[0]?.url) seg.backgroundPhotoUrl = media.photos[0].url;
+            if (media.photos?.length > 1) {
+              seg.scenePhotoUrls = media.photos.map((p: { url: string }) => p.url);
+            }
+          }
+          if (mediaData.music) updatedManifest.backgroundMusicUrl = mediaData.music;
+          if (mediaData.sfx) updatedManifest.transitionSfxUrl = mediaData.sfx;
+        }
+      } catch {
+        // Graceful — continue without stock media
+      }
+
+      // Phase 2: Generate voiceover
+      setLoadingStep("Generating voiceover...");
+      try {
+        const voRes = await fetch("/api/media/voiceover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            segments: manifest.segments.map((s) => ({ id: s.id, content: s.content })),
+          }),
+        });
+        const voData = await voRes.json();
+
+        if (!cancelled && voData.voiceovers) {
+          for (const seg of updated) {
+            const voUrl = voData.voiceovers[seg.id];
+            if (voUrl) seg.voiceoverUrl = voUrl;
+          }
+        }
+      } catch {
+        // Graceful — falls back to Web Speech
+      }
+
+      if (!cancelled) {
+        updatedManifest.segments = updated;
+        setEnrichedSegments(updated);
+        setEnrichedManifest(updatedManifest);
+        setMediaLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [manifest]);
+
+  // Load Gemini images on mount (fallback for segments without stock media)
   useEffect(() => {
     if (Object.keys(sceneImages).length > 0) return;
 
@@ -102,7 +185,7 @@ export function VideosView({ manifest }: VideosViewProps) {
     }
   }, [currentSegment, manifest.segments.length]);
 
-  const segment = manifest.segments[currentSegment];
+  const segment = enrichedSegments[currentSegment];
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -128,8 +211,16 @@ export function VideosView({ manifest }: VideosViewProps) {
         </Button>
       </div>
 
+      {/* Media loading progress */}
+      {mediaLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{loadingStep}</span>
+        </div>
+      )}
+
       {/* Image loading progress */}
-      {imagesLoading && (
+      {imagesLoading && !mediaLoading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span>
@@ -163,6 +254,9 @@ export function VideosView({ manifest }: VideosViewProps) {
           mode={mode}
           onComplete={handleVideoComplete}
           sceneImages={sceneImages[segment.id] || []}
+          voiceoverUrl={segment.voiceoverUrl}
+          backgroundMusicUrl={enrichedManifest.backgroundMusicUrl}
+          transitionSfxUrl={enrichedManifest.transitionSfxUrl}
         />
       </div>
 

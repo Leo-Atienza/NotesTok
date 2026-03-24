@@ -2,6 +2,13 @@ import type { Caption } from "@remotion/captions";
 
 // === Scene system for TikTok-style rendering ===
 
+export interface WordTiming {
+  word: string;
+  startMs: number;
+  endMs: number;
+  isKeyTerm: boolean;
+}
+
 export interface Scene {
   sceneIndex: number;
   sentence: string;
@@ -9,6 +16,8 @@ export interface Scene {
   startMs: number;
   endMs: number;
   wordTimings: { word: string; startMs: number; endMs: number }[];
+  /** All significant words timed sequentially — used by one-word-at-a-time captions */
+  allWordTimings: WordTiming[];
 }
 
 // Words to skip when extracting key words for big overlay text
@@ -82,6 +91,35 @@ function extractKeyWords(sentence: string, max = 4, keyTerms: string[] = []): st
   return combined.slice(0, max);
 }
 
+/** Extract ALL significant words for one-word-at-a-time display */
+function extractAllSignificantWords(sentence: string, keyTerms: string[] = []): { word: string; isKeyTerm: boolean }[] {
+  const words = sentence.split(/\s+/).filter(Boolean);
+  const keyTermSet = new Set(keyTerms.map((t) => t.toLowerCase()));
+  const results: { word: string; isKeyTerm: boolean }[] = [];
+
+  for (const w of words) {
+    const cleaned = cleanWord(w);
+    if (cleaned.length < 2) continue;
+    if (SKIP_WORDS.has(cleaned.toLowerCase())) continue;
+
+    const isKey = keyTermSet.has(cleaned.toLowerCase()) ||
+      keyTerms.some((t) => t.toLowerCase().includes(cleaned.toLowerCase()) && cleaned.length >= 4);
+
+    results.push({ word: cleaned, isKeyTerm: isKey });
+  }
+
+  // Minimum: always return at least the 2 longest words
+  if (results.length === 0) {
+    const sorted = words
+      .map((w) => cleanWord(w))
+      .filter((w) => w.length >= 2)
+      .sort((a, b) => b.length - a.length);
+    return sorted.slice(0, 2).map((w) => ({ word: w, isKeyTerm: false }));
+  }
+
+  return results;
+}
+
 function splitIntoSentences(content: string): string[] {
   // Split on sentence boundaries, keep non-empty
   const raw = content.split(/(?<=[.!?])\s+/);
@@ -122,12 +160,28 @@ export function generateSceneData(
 
     const keyWords = extractKeyWords(sentence, 4, keyTerms);
 
-    // Generate timing for each key word — evenly spaced across the scene
+    // Legacy keyword timings (backward compat)
     const kwDuration = durationMs / Math.max(keyWords.length, 1);
     const wordTimings = keyWords.map((word, i) => ({
       word,
       startMs: Math.round(startMs + i * kwDuration),
       endMs: Math.round(startMs + (i + 1) * kwDuration),
+    }));
+
+    // New: ALL significant words for one-word-at-a-time display
+    const significantWords = extractAllSignificantWords(sentence, keyTerms);
+    // Front-loaded: words fill first 70% of scene, last 30% holds
+    const activeWindow = durationMs * 0.7;
+    const msPerWord = significantWords.length > 0
+      ? Math.min(activeWindow / significantWords.length, 500)
+      : 400;
+    const clampedMs = Math.max(msPerWord, 300); // 300-500ms per word
+
+    const allWordTimings: WordTiming[] = significantWords.map((sw, i) => ({
+      word: sw.word,
+      startMs: Math.round(startMs + i * clampedMs),
+      endMs: Math.round(startMs + (i + 1) * clampedMs),
+      isKeyTerm: sw.isKeyTerm,
     }));
 
     scenes.push({
@@ -137,6 +191,7 @@ export function generateSceneData(
       startMs: Math.round(startMs),
       endMs: Math.round(endMs),
       wordTimings,
+      allWordTimings,
     });
 
     currentMs = endMs;

@@ -8,6 +8,8 @@ export interface LessonManifest {
   estimatedMinutes: number;
   totalXP: number;
   segments: Segment[];
+  backgroundMusicUrl?: string;
+  transitionSfxUrl?: string;
 }
 
 export interface Segment {
@@ -24,6 +26,10 @@ export interface Segment {
   imageUrl?: string;
   sceneImagePrompts?: string[];
   sceneImageUrls?: string[];
+  backgroundVideoUrl?: string;
+  backgroundPhotoUrl?: string;
+  scenePhotoUrls?: string[];
+  voiceoverUrl?: string;
 }
 
 export interface QuizCheckpoint {
