@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UploadZone } from "@/components/upload/UploadZone";
-import { LessonPlayer } from "@/components/lesson/LessonPlayer";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { LessonSkeleton } from "@/components/ui/lesson-skeleton";
 import {
   BookOpen,
   Zap,
@@ -15,129 +13,181 @@ import {
   Trophy,
   ArrowRight,
   Sparkles,
+  Play,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { LessonManifest } from "@/lib/types";
+import { saveLesson, getAllLessons, deleteLesson } from "@/lib/lesson-store";
+import { DEMO_LESSON, DEMO_LESSON_ID } from "@/lib/demo-lesson";
 
 export default function Home() {
-  const [manifest, setManifest] = useState<LessonManifest | null>(null);
-  const [showSkeleton, setShowSkeleton] = useState(false);
+  const router = useRouter();
+  const [lessons, setLessons] = useState<LessonManifest[]>([]);
+
+  // Load saved lessons on mount
+  useEffect(() => {
+    setLessons(getAllLessons());
+  }, []);
 
   const handleLessonReady = (m: LessonManifest) => {
-    setShowSkeleton(true);
-    // Brief skeleton before player mounts — feels premium
-    setTimeout(() => {
-      setShowSkeleton(false);
-      setManifest(m);
-    }, 600);
+    saveLesson(m);
+    router.push(`/lesson?id=${encodeURIComponent(m.id)}`);
   };
 
-  if (showSkeleton) {
-    return <LessonSkeleton />;
-  }
+  const handleDemo = () => {
+    saveLesson(DEMO_LESSON);
+    router.push(`/lesson?id=${encodeURIComponent(DEMO_LESSON_ID)}`);
+  };
 
-  if (manifest) {
-    return (
-      <ErrorBoundary onReset={() => setManifest(null)}>
-        <LessonPlayer manifest={manifest} onRestart={() => setManifest(null)} />
-      </ErrorBoundary>
-    );
-  }
+  const handleDeleteLesson = (id: string) => {
+    deleteLesson(id);
+    setLessons(getAllLessons());
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
       {/* Top nav */}
       <div className="max-w-4xl mx-auto px-4 pt-4 flex justify-between items-center">
-        <span className="text-sm font-semibold text-muted-foreground">NotesTok</span>
-        <Badge variant="outline" className="text-[10px] sm:text-xs gap-1 font-normal">
+        <span className="text-sm font-semibold text-muted-foreground">
+          NotesTok
+        </span>
+        <Badge
+          variant="outline"
+          className="text-[10px] sm:text-xs gap-1 font-normal"
+        >
           <Sparkles className="w-3 h-3" />
           Powered by Google Gemini
         </Badge>
       </div>
 
-      {/* Hero */}
-      <div className="max-w-4xl mx-auto px-4 pt-10 sm:pt-16 pb-6 sm:pb-8 text-center">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight mb-3">
+      {/* Hero — condensed */}
+      <div className="max-w-4xl mx-auto px-4 pt-8 sm:pt-12 pb-4 text-center">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight mb-2">
           <span className="bg-gradient-to-r from-purple-600 via-primary to-blue-600 bg-clip-text text-transparent">
             NotesTok
           </span>
         </h1>
-        <p className="text-lg sm:text-xl md:text-2xl font-semibold text-foreground mb-2">
+        <p className="text-lg sm:text-xl font-semibold text-foreground mb-1.5">
           Upload Notes. Get Quizzed. Actually Remember.
         </p>
-        <p className="text-sm text-muted-foreground max-w-lg mx-auto mb-4">
-          AI transforms any study material into interactive micro-lessons with
-          quizzes that adapt to how your brain works.
+        <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
+          AI transforms study material into TikTok-style video lessons with
+          flashcards and quizzes.
         </p>
-        <Badge
-          variant="secondary"
-          className="text-xs font-medium gap-1.5 px-3 py-1"
-        >
-          <Sparkles className="w-3 h-3" />
-          Built on active recall + spaced retrieval research
-        </Badge>
-      </div>
 
-      {/* How It Works — 3 Steps */}
-      <div className="max-w-2xl mx-auto px-4 pb-10">
-        <div className="flex items-center justify-center gap-2 md:gap-4">
-          <StepCard
-            icon={<Upload className="w-5 h-5" />}
-            title="Upload any notes"
-            color="text-purple-600 bg-purple-100"
-          />
-          <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:block" />
-          <div className="w-6 border-t border-dashed border-muted-foreground/30 shrink-0 sm:hidden" />
-          <StepCard
-            icon={<Brain className="w-5 h-5" />}
-            title="AI creates micro-lessons"
-            color="text-primary bg-primary/10"
-          />
-          <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:block" />
-          <div className="w-6 border-t border-dashed border-muted-foreground/30 shrink-0 sm:hidden" />
-          <StepCard
-            icon={<Trophy className="w-5 h-5" />}
-            title="Quiz gates force recall"
-            color="text-amber-600 bg-amber-100"
-          />
+        {/* How it works — compact horizontal */}
+        <div className="flex items-center justify-center gap-2 md:gap-4 mb-6">
+          <StepPill icon={<Upload className="w-3.5 h-3.5" />} text="Upload" />
+          <ArrowRight className="w-3 h-3 text-muted-foreground" />
+          <StepPill icon={<Brain className="w-3.5 h-3.5" />} text="AI learns" />
+          <ArrowRight className="w-3 h-3 text-muted-foreground" />
+          <StepPill icon={<Play className="w-3.5 h-3.5" />} text="Watch & Quiz" />
         </div>
       </div>
 
-      {/* Upload zone */}
-      <div className="max-w-4xl mx-auto px-4 pb-16">
+      {/* Demo button + Upload zone */}
+      <div className="max-w-4xl mx-auto px-4 pb-8">
+        <div className="flex justify-center mb-4">
+          <Button
+            onClick={handleDemo}
+            variant="outline"
+            className="gap-2 border-primary/30 hover:border-primary/60 hover:bg-primary/5"
+          >
+            <Sparkles className="w-4 h-4 text-primary" />
+            Try Demo — How Memory Works
+          </Button>
+        </div>
         <UploadZone onLessonReady={handleLessonReady} />
       </div>
 
-      {/* Three Personas Section */}
-      <div className="max-w-4xl mx-auto px-4 pb-16">
-        <h2 className="text-center text-lg font-semibold mb-1">
+      {/* Lesson Library */}
+      {lessons.length > 0 && (
+        <div className="max-w-4xl mx-auto px-4 pb-12">
+          <h2 className="text-base font-semibold mb-3 flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-primary" />
+            Your Lessons
+          </h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {lessons.map((lesson) => (
+              <div
+                key={lesson.id}
+                className="group p-4 rounded-xl border bg-card hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer relative"
+                onClick={() =>
+                  router.push(
+                    `/lesson?id=${encodeURIComponent(lesson.id)}`
+                  )
+                }
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-sm truncate">
+                      {lesson.title}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {lesson.subject} &middot;{" "}
+                      {lesson.segments.length} segments
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteLesson(lesson.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex gap-1.5 mt-2">
+                  <Badge variant="secondary" className="text-[10px]">
+                    {lesson.difficulty}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] gap-0.5"
+                  >
+                    <Zap className="w-2.5 h-2.5" />
+                    {lesson.totalXP} XP
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Three Personas */}
+      <div className="max-w-4xl mx-auto px-4 pb-12">
+        <h2 className="text-center text-base font-semibold mb-1">
           Adaptive Delivery for Every Brain
         </h2>
-        <p className="text-center text-sm text-muted-foreground mb-8">
+        <p className="text-center text-xs text-muted-foreground mb-6">
           One tool, three modes — built for the way you actually study
         </p>
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-3 gap-3">
           <PersonaCard
-            icon={<Zap className="w-5 h-5" />}
+            icon={<Zap className="w-4 h-4" />}
             title="Focus-Seeker"
             subtitle="For the ADHD brain"
-            description="30-second micro-segments with quiz gates every minute. Gamified XP keeps motivation high. Impossible to zone out."
+            description="30-second micro-segments with quiz gates. Gamified XP keeps motivation high."
             accentColor="border-l-amber-500"
             iconBg="bg-amber-100 text-amber-600"
           />
           <PersonaCard
-            icon={<Headphones className="w-5 h-5" />}
+            icon={<Headphones className="w-4 h-4" />}
             title="Commuter"
-            subtitle="For the multi-modal learner"
-            description="Audio narration with play, pause, and skip. Study while walking, riding transit, or waiting in line."
+            subtitle="Multi-modal learner"
+            description="Audio narration with play, pause, skip. Study while walking or on transit."
             accentColor="border-l-blue-500"
             iconBg="bg-blue-100 text-blue-600"
           />
           <PersonaCard
-            icon={<Globe className="w-5 h-5" />}
+            icon={<Globe className="w-4 h-4" />}
             title="Global Scholar"
-            subtitle="For the ESL student"
-            description="One-tap language simplification. Complex grammar made simple. Exam-critical terms preserved exactly as they appear."
+            subtitle="ESL student"
+            description="One-tap simplification. Exam-critical terms preserved."
             accentColor="border-l-green-500"
             iconBg="bg-green-100 text-green-600"
           />
@@ -145,67 +195,53 @@ export default function Home() {
       </div>
 
       {/* Features */}
-      <div className="max-w-3xl mx-auto px-4 pb-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="max-w-3xl mx-auto px-4 pb-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <FeatureCard
-            icon={<BookOpen className="w-5 h-5" />}
+            icon={<BookOpen className="w-4 h-4" />}
             title="Upload Anything"
-            desc="PDFs, notes, text — AI handles it all"
-            delay={0}
+            desc="PDFs, notes, text"
           />
           <FeatureCard
-            icon={<Zap className="w-5 h-5" />}
+            icon={<Zap className="w-4 h-4" />}
             title="Stop & Solve"
-            desc="Quizzes every 30s force active recall"
-            delay={100}
+            desc="Quiz gates force recall"
           />
           <FeatureCard
-            icon={<Brain className="w-5 h-5" />}
+            icon={<Brain className="w-4 h-4" />}
             title="Panic Button"
-            desc="AI re-explains with a fresh analogy"
-            delay={200}
+            desc="Fresh analogy on demand"
           />
           <FeatureCard
-            icon={<Globe className="w-5 h-5" />}
+            icon={<Globe className="w-4 h-4" />}
             title="Global Scholar"
-            desc="Simplified language, exam terms intact"
-            delay={300}
+            desc="Simplified language"
           />
         </div>
       </div>
 
       {/* Footer */}
-      <div className="text-center pb-8 space-y-1">
+      <div className="text-center pb-6 space-y-0.5">
         <p className="text-xs text-muted-foreground">
           Built for Build With AI 2026 — GDG UTSC
         </p>
-        <p className="text-xs text-muted-foreground">
-          Powered by Google Gemini
-        </p>
+        <p className="text-xs text-muted-foreground">Powered by Google Gemini</p>
       </div>
     </div>
   );
 }
 
-function StepCard({
+function StepPill({
   icon,
-  title,
-  color,
+  text,
 }: {
   icon: React.ReactNode;
-  title: string;
-  color: string;
+  text: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2 min-w-0">
-      <div
-        className={`w-10 h-10 rounded-full flex items-center justify-center ${color}`}
-      >
-        {icon}
-      </div>
-      <span className="text-xs font-medium text-center leading-tight">
-        {title}
-      </span>
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/60 border text-xs font-medium">
+      {icon}
+      {text}
     </div>
   );
 }
@@ -227,20 +263,20 @@ function PersonaCard({
 }) {
   return (
     <div
-      className={`p-5 rounded-xl border border-l-4 ${accentColor} bg-card hover:shadow-sm transition-shadow`}
+      className={`p-4 rounded-xl border border-l-4 ${accentColor} bg-card hover:shadow-sm transition-shadow`}
     >
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-2.5 mb-2">
         <div
-          className={`w-9 h-9 rounded-lg flex items-center justify-center ${iconBg}`}
+          className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconBg}`}
         >
           {icon}
         </div>
         <div>
           <h3 className="font-semibold text-sm">{title}</h3>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="text-[11px] text-muted-foreground">{subtitle}</p>
         </div>
       </div>
-      <p className="text-sm text-muted-foreground leading-relaxed">
+      <p className="text-xs text-muted-foreground leading-relaxed">
         {description}
       </p>
     </div>
@@ -251,22 +287,17 @@ function FeatureCard({
   icon,
   title,
   desc,
-  delay,
 }: {
   icon: React.ReactNode;
   title: string;
   desc: string;
-  delay: number;
 }) {
   return (
-    <div
-      className="p-5 rounded-xl border bg-card text-left hover:border-primary/30 hover:shadow-sm transition-all animate-fade-in"
-      style={{ animationDelay: `${delay}ms`, animationFillMode: "both" }}
-    >
-      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-3">
+    <div className="p-4 rounded-xl border bg-card text-left hover:border-primary/30 transition-all">
+      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-2">
         {icon}
       </div>
-      <h3 className="font-semibold text-sm mb-1">{title}</h3>
+      <h3 className="font-semibold text-sm mb-0.5">{title}</h3>
       <p className="text-xs text-muted-foreground">{desc}</p>
     </div>
   );

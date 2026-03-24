@@ -104,7 +104,7 @@ function splitIntoSentences(content: string): string[] {
 
 export function generateSceneData(
   content: string,
-  wordsPerSecond = 2.8,
+  wordsPerSecond = 3.2,
   keyTerms: string[] = []
 ): Scene[] {
   const sentences = splitIntoSentences(content);
@@ -177,7 +177,7 @@ export function generateCaptionData(
 export function getSegmentDurationInFrames(
   content: string,
   fps: number,
-  wordsPerSecond = 2.8
+  wordsPerSecond = 3.2
 ): number {
   const words = content.split(/\s+/).filter(Boolean).length;
   const durationSec = words / wordsPerSecond + 1.5;

@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAI, withRetry } from "@/lib/gemini";
+import { getAI } from "@/lib/gemini";
 
 export const runtime = "nodejs";
+
+// In-memory cache keyed by prompt hash
+const imageCache = new Map<string, string>();
+
+function hashPrompt(prompt: string): string {
+  // Simple hash for caching
+  let hash = 0;
+  for (let i = 0; i < prompt.length; i++) {
+    const chr = prompt.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0;
+  }
+  return String(hash);
+}
 
 // Models to try in order of preference
 const IMAGE_MODELS = [
@@ -21,7 +35,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const fullPrompt = `Generate an image: Educational illustration for a study app — ${prompt}. Style: clean, modern, colorful, vibrant, dramatic lighting. No text or words in the image.`;
+    // Check cache first
+    const cacheKey = hashPrompt(prompt);
+    const cached = imageCache.get(cacheKey);
+    if (cached) {
+      return NextResponse.json({ imageUrl: cached });
+    }
+
+    const fullPrompt = `Generate an image: Hyper-realistic, dramatic, cinematic scene — ${prompt}. Style: vivid colors, professional cinematic lighting, deep shadows, high contrast. NO text, NO words, NO letters, NO watermarks in the image.`;
 
     // Try Gemini native image generation models
     for (const model of IMAGE_MODELS) {
@@ -39,9 +60,10 @@ export async function POST(req: NextRequest) {
           for (const part of parts) {
             if (part.inlineData?.data) {
               const mimeType = part.inlineData.mimeType || "image/png";
-              return NextResponse.json({
-                imageUrl: `data:${mimeType};base64,${part.inlineData.data}`,
-              });
+              const imageUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+              // Cache the result
+              imageCache.set(cacheKey, imageUrl);
+              return NextResponse.json({ imageUrl });
             }
           }
         }
@@ -55,7 +77,7 @@ export async function POST(req: NextRequest) {
     try {
       const response = await getAI().models.generateImages({
         model: "imagen-4.0-generate-001",
-        prompt: `Educational illustration: ${prompt}. Clean, modern, colorful, no text.`,
+        prompt: `Cinematic dramatic scene: ${prompt}. Vivid colors, professional lighting, no text.`,
         config: {
           numberOfImages: 1,
           aspectRatio: "9:16",
@@ -64,9 +86,9 @@ export async function POST(req: NextRequest) {
 
       const imageBytes = response.generatedImages?.[0]?.image?.imageBytes;
       if (imageBytes) {
-        return NextResponse.json({
-          imageUrl: `data:image/png;base64,${imageBytes}`,
-        });
+        const imageUrl = `data:image/png;base64,${imageBytes}`;
+        imageCache.set(cacheKey, imageUrl);
+        return NextResponse.json({ imageUrl });
       }
     } catch {
       // Imagen 4 not available on free tier

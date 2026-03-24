@@ -9,8 +9,8 @@ import {
 } from "remotion";
 import type { Scene } from "./CaptionEngine";
 
-// Pill highlight colors — cycle per scene
-const PILL_COLORS = ["#dc2626", "#22c55e", "#eab308", "#3b82f6", "#ec4899"];
+// Pill highlight colors — vibrant, high contrast
+const PILL_COLORS = ["#ef4444", "#22c55e", "#eab308", "#3b82f6", "#ec4899", "#f97316", "#06b6d4"];
 
 interface AnimatedCaptionsProps {
   scenes: Scene[];
@@ -60,39 +60,71 @@ interface SceneDisplayProps {
   pillColor: string;
 }
 
-// Per-word entry animation patterns
+// 8 word animation patterns — more variety for TikTok feel
 function getWordAnimation(
   wordIndex: number,
-  progress: number // 0→1 spring progress
-): { translateX: number; translateY: number; scale: number } {
-  const pattern = wordIndex % 4;
+  progress: number
+): { translateX: number; translateY: number; scale: number; rotate: number } {
+  const pattern = wordIndex % 8;
   switch (pattern) {
-    case 0: // Slam down from top
+    case 0: // Slam down
       return {
         translateX: 0,
-        translateY: interpolate(progress, [0, 1], [-40, 0]),
-        scale: interpolate(progress, [0, 0.6, 1], [1.3, 1.05, 1]),
+        translateY: interpolate(progress, [0, 1], [-50, 0]),
+        scale: interpolate(progress, [0, 0.5, 1], [1.4, 1.05, 1]),
+        rotate: 0,
       };
     case 1: // Pop from center
       return {
         translateX: 0,
         translateY: 0,
-        scale: interpolate(progress, [0, 0.5, 1], [0.3, 1.08, 1]),
+        scale: interpolate(progress, [0, 0.4, 1], [0.2, 1.15, 1]),
+        rotate: 0,
       };
     case 2: // Slide from left
       return {
-        translateX: interpolate(progress, [0, 1], [-60, 0]),
+        translateX: interpolate(progress, [0, 1], [-80, 0]),
         translateY: 0,
-        scale: interpolate(progress, [0, 1], [0.9, 1]),
+        scale: interpolate(progress, [0, 1], [0.85, 1]),
+        rotate: 0,
       };
     case 3: // Slide from right
       return {
-        translateX: interpolate(progress, [0, 1], [60, 0]),
+        translateX: interpolate(progress, [0, 1], [80, 0]),
         translateY: 0,
-        scale: interpolate(progress, [0, 1], [0.9, 1]),
+        scale: interpolate(progress, [0, 1], [0.85, 1]),
+        rotate: 0,
+      };
+    case 4: // Flip in (rotation)
+      return {
+        translateX: 0,
+        translateY: interpolate(progress, [0, 1], [-20, 0]),
+        scale: interpolate(progress, [0, 0.5, 1], [0.5, 1.1, 1]),
+        rotate: interpolate(progress, [0, 1], [-15, 0]),
+      };
+    case 5: // Bounce overshoot
+      return {
+        translateX: 0,
+        translateY: interpolate(progress, [0, 0.4, 0.7, 1], [-60, 5, -3, 0]),
+        scale: interpolate(progress, [0, 0.4, 0.7, 1], [0.6, 1.1, 0.98, 1]),
+        rotate: 0,
+      };
+    case 6: // Zoom from zero
+      return {
+        translateX: 0,
+        translateY: 0,
+        scale: interpolate(progress, [0, 0.5, 1], [0, 1.2, 1]),
+        rotate: interpolate(progress, [0, 0.3, 1], [10, -3, 0]),
+      };
+    case 7: // Rise up
+      return {
+        translateX: 0,
+        translateY: interpolate(progress, [0, 1], [40, 0]),
+        scale: interpolate(progress, [0, 0.6, 1], [0.7, 1.05, 1]),
+        rotate: 0,
       };
     default:
-      return { translateX: 0, translateY: 0, scale: 1 };
+      return { translateX: 0, translateY: 0, scale: 1, rotate: 0 };
   }
 }
 
@@ -109,75 +141,53 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
 
   const isBrainrot = style === "brainrot";
 
-  // Scene entry — fast fade in
-  const entryOpacity = interpolate(frame, [0, 4], [0, 1], {
+  // Scene entry/exit
+  const entryOpacity = interpolate(frame, [0, 3], [0, 1], {
     extrapolateRight: "clamp",
   });
-
-  // Scene exit — quick fade out
-  const exitStart = Math.max(durationFrames - 4, 1);
+  const exitStart = Math.max(durationFrames - 3, 1);
   const exitOpacity = interpolate(frame, [exitStart, durationFrames], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-
-  // Flash transition at scene start (white flash, 3 frames)
-  const flashOpacity = interpolate(frame, [0, 1, 3], [0.35, 0.2, 0], {
-    extrapolateRight: "clamp",
-  });
-
   const combinedOpacity = entryOpacity * exitOpacity;
 
   return (
     <AbsoluteFill>
-      {/* White flash transition */}
-      {frame < 3 && (
-        <AbsoluteFill
-          style={{
-            backgroundColor: "#fff",
-            opacity: flashOpacity,
-            zIndex: 20,
-          }}
-        />
-      )}
-
-      {/* Layer A — Big overlay text (center of screen) */}
+      {/* Big overlay words — positioned in bottom 35% for image-first layout */}
       <div
         style={{
           position: "absolute",
-          top: "28%",
+          top: isBrainrot ? "55%" : "50%",
           left: 0,
           right: 0,
-          bottom: "22%",
+          bottom: isBrainrot ? "8%" : "12%",
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "center",
           alignContent: "center",
-          gap: "10px 14px",
+          gap: "8px 12px",
           padding: "0 5%",
           opacity: combinedOpacity,
         }}
       >
         {scene.wordTimings.map((wt, i) => {
           const isActive = timeMs >= wt.startMs && timeMs < wt.endMs;
-          const hasAppeared = timeMs >= wt.startMs;
 
-          // Staggered entry: each word enters 6 frames after the previous
-          const wordEntryFrame = i * 6;
+          // Faster stagger: 4 frames between words (was 6)
+          const wordEntryFrame = i * 4;
           const wordSpring = spring({
             frame: Math.max(0, frame - wordEntryFrame),
             fps,
-            config: { damping: 10, mass: 0.35, stiffness: 220 },
+            config: { damping: 8, mass: 0.3, stiffness: 260 },
           });
 
-          // Get per-word animation pattern
           const anim = getWordAnimation(i, wordSpring);
 
-          // Active word shake effect
-          const shakeX =
-            isActive && frame > wordEntryFrame + 4
-              ? Math.sin(frame * 4) * 3
-              : 0;
+          // Active word pulse
+          const pulseScale = isActive
+            ? 1 + Math.sin(frame * 6) * 0.03
+            : 1;
 
           const wordOpacity = frame >= wordEntryFrame ? 1 : 0;
 
@@ -186,29 +196,31 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
               key={i}
               style={{
                 display: "inline-block",
-                transform: `translate(${anim.translateX + shakeX}px, ${anim.translateY}px) scale(${anim.scale})`,
+                transform: `translate(${anim.translateX}px, ${anim.translateY}px) scale(${anim.scale * pulseScale}) rotate(${anim.rotate}deg)`,
                 transformOrigin: "center center",
-                // Pill highlight on active word
+                // Pill highlight on active word with glow
                 backgroundColor: isActive ? pillColor : "transparent",
-                borderRadius: 10,
-                padding: isActive ? "6px 18px" : "6px 8px",
+                borderRadius: 12,
+                padding: isActive ? "8px 20px" : "6px 8px",
+                boxShadow: isActive
+                  ? `0 0 24px ${pillColor}80, 0 0 48px ${pillColor}40`
+                  : "none",
                 // Text
                 color: "#FFFFFF",
-                fontSize: isBrainrot ? 88 : 68,
+                fontSize: isBrainrot ? 80 : 64,
                 fontWeight: 900,
                 fontFamily: isBrainrot
                   ? "system-ui, -apple-system, 'Segoe UI', sans-serif"
                   : "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
                 textTransform: "uppercase",
-                lineHeight: 1.1,
+                lineHeight: 1.15,
                 letterSpacing: isBrainrot ? "-0.02em" : "0.02em",
-                // Heavy outline via text-shadow
+                // Heavy text-stroke for readability over images
                 textShadow:
-                  "3px 3px 0 rgba(0,0,0,0.9), -3px -3px 0 rgba(0,0,0,0.9), " +
-                  "3px -3px 0 rgba(0,0,0,0.9), -3px 3px 0 rgba(0,0,0,0.9), " +
-                  "0 4px 8px rgba(0,0,0,0.7)",
+                  "3px 3px 0 rgba(0,0,0,1), -3px -3px 0 rgba(0,0,0,1), " +
+                  "3px -3px 0 rgba(0,0,0,1), -3px 3px 0 rgba(0,0,0,1), " +
+                  "0 0 8px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.7)",
                 opacity: wordOpacity,
-                transition: "background-color 0.08s",
               }}
             >
               {wt.word}
@@ -217,35 +229,36 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
         })}
       </div>
 
-      {/* Layer B — Small subtitle at bottom */}
+      {/* Bottom subtitle — full sentence with word highlight */}
       <div
         style={{
           position: "absolute",
-          bottom: "6%",
-          left: "4%",
-          right: "4%",
+          bottom: isBrainrot ? "2%" : "4%",
+          left: "3%",
+          right: "3%",
           display: "flex",
           justifyContent: "center",
-          opacity: combinedOpacity,
+          opacity: combinedOpacity * 0.95,
         }}
       >
         <div
           style={{
-            backgroundColor: "rgba(0,0,0,0.7)",
-            borderRadius: 8,
-            padding: "8px 18px",
+            backgroundColor: "rgba(0,0,0,0.75)",
+            borderRadius: 10,
+            padding: "10px 20px",
             maxWidth: "95%",
+            backdropFilter: "blur(4px)",
           }}
         >
           <p
             style={{
-              color: "rgba(255,255,255,0.9)",
-              fontSize: isBrainrot ? 22 : 20,
-              fontWeight: 500,
+              color: "rgba(255,255,255,0.95)",
+              fontSize: isBrainrot ? 24 : 22,
+              fontWeight: 600,
               fontFamily: isBrainrot
                 ? "system-ui, -apple-system, sans-serif"
                 : "'SF Mono', 'Fira Code', monospace",
-              lineHeight: 1.4,
+              lineHeight: 1.5,
               textAlign: "center",
               margin: 0,
             }}
