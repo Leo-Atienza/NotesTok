@@ -72,7 +72,7 @@ export function StopAndSolve({
             Stop & Solve
           </Badge>
           <Badge variant="outline" className="text-xs">
-            +{quiz.xpReward} XP
+            +{quiz.xpReward || 15} XP
           </Badge>
         </div>
 
@@ -172,7 +172,7 @@ export function StopAndSolve({
               <CheckCircle2 className="w-5 h-5 mt-0.5 text-green-600 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-green-800 dark:text-green-300">
-                  Correct! +{quiz.xpReward} XP
+                  Correct! +{quiz.xpReward || 15} XP
                 </p>
                 <p className="text-sm text-green-700 dark:text-green-400 mt-1">
                   {quiz.explanation}

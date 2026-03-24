@@ -16,7 +16,7 @@ interface BrainrotModeProps {
   sceneImages?: string[];
 }
 
-// Different zoom/pan presets per scene to simulate camera angles
+// Camera presets for image zoom/pan
 const CAMERA_PRESETS = [
   { scale: 1.15, x: 0, y: 0 },
   { scale: 1.3, x: -40, y: -20 },
@@ -24,16 +24,26 @@ const CAMERA_PRESETS = [
   { scale: 1.35, x: -20, y: 30 },
   { scale: 1.2, x: 25, y: 25 },
   { scale: 1.4, x: 0, y: -30 },
-  { scale: 1.3, x: 0, y: 35 },
 ];
 
-// Animated gradient fallback colors
-const GRADIENT_SETS = [
-  ["#0f0c29", "#302b63", "#24243e"],
-  ["#1a1a2e", "#16213e", "#0f3460"],
-  ["#0a192f", "#172a45", "#1d3557"],
-  ["#1b0033", "#300050", "#4a0072"],
-  ["#001219", "#005f73", "#0a9396"],
+// Vibrant scene color themes — each scene gets a distinct look
+const SCENE_THEMES = [
+  { bg: ["#7c3aed", "#4f46e5", "#6d28d9"], accent: "#a78bfa", glow: "rgba(139,92,246,0.4)" },
+  { bg: ["#db2777", "#e11d48", "#be185d"], accent: "#f472b6", glow: "rgba(244,114,182,0.4)" },
+  { bg: ["#0891b2", "#0e7490", "#155e75"], accent: "#22d3ee", glow: "rgba(34,211,238,0.4)" },
+  { bg: ["#ea580c", "#dc2626", "#c2410c"], accent: "#fb923c", glow: "rgba(251,146,60,0.4)" },
+  { bg: ["#059669", "#047857", "#065f46"], accent: "#34d399", glow: "rgba(52,211,153,0.4)" },
+  { bg: ["#7c3aed", "#be185d", "#4f46e5"], accent: "#c084fc", glow: "rgba(192,132,252,0.4)" },
+  { bg: ["#2563eb", "#1d4ed8", "#1e40af"], accent: "#60a5fa", glow: "rgba(96,165,250,0.4)" },
+];
+
+// Floating shape configs — circles/blobs that drift around
+const SHAPES = [
+  { size: 280, xBase: 15, yBase: 20, speed: 0.008, phase: 0, opacity: 0.15 },
+  { size: 200, xBase: 75, yBase: 60, speed: 0.012, phase: 2, opacity: 0.12 },
+  { size: 340, xBase: 50, yBase: 80, speed: 0.006, phase: 4, opacity: 0.1 },
+  { size: 160, xBase: 85, yBase: 15, speed: 0.015, phase: 1, opacity: 0.18 },
+  { size: 220, xBase: 25, yBase: 70, speed: 0.01, phase: 3, opacity: 0.13 },
 ];
 
 export const BrainrotMode: React.FC<BrainrotModeProps> = ({
@@ -44,19 +54,18 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
   const { fps, durationInFrames } = useVideoConfig();
 
   const scenes = generateSceneData(segment.content, 2.8, segment.keyTerms);
-  const hasSingleImage = !!segment.imageUrl;
   const hasSceneImages = sceneImages.length > 0;
+  const hasSingleImage = !!segment.imageUrl;
 
-  // --- Progress bar ---
   const progressWidth = interpolate(frame, [0, durationInFrames], [0, 100], {
     extrapolateRight: "clamp",
   });
 
-  // --- Hook slide (first segment only, ~50 frames) ---
+  // Hook slide (first segment only)
   const isFirstSegment = segment.order === 0;
   const hookDuration = isFirstSegment ? 50 : 0;
 
-  const hookFlash = interpolate(frame, [0, 2, 5], [0.5, 0.3, 0], {
+  const hookFlash = interpolate(frame, [0, 2, 5], [0.6, 0.3, 0], {
     extrapolateRight: "clamp",
   });
   const hookEmojiScale = spring({
@@ -76,7 +85,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
       })
     : 0;
 
-  // --- Title animation for non-first segments ---
+  // Title animation for non-first segments
   const titleEntryOpacity = interpolate(frame, [0, 15], [0, 1], {
     extrapolateRight: "clamp",
   });
@@ -93,13 +102,14 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
     config: { damping: 8, mass: 0.5, stiffness: 200 },
   });
 
-  // --- Determine current scene ---
+  // Current scene
   const currentTimeMs = (frame / fps) * 1000;
   let currentSceneIndex = 0;
   for (let i = 0; i < scenes.length; i++) {
     if (currentTimeMs >= scenes[i].startMs) currentSceneIndex = i;
   }
   const camera = CAMERA_PRESETS[currentSceneIndex % CAMERA_PRESETS.length];
+  const theme = SCENE_THEMES[currentSceneIndex % SCENE_THEMES.length];
 
   const sceneStartFrame = Math.round(
     ((scenes[currentSceneIndex]?.startMs ?? 0) / 1000) * fps
@@ -114,14 +124,12 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         ? segment.imageUrl!
         : null;
 
-  // Previous scene image for crossfade
   const prevSceneIndex = Math.max(0, currentSceneIndex - 1);
   const prevSceneImage =
     hasSceneImages && sceneImages[prevSceneIndex]
       ? sceneImages[prevSceneIndex]
       : null;
 
-  // Crossfade over 8 frames at scene start
   const transitionProgress = interpolate(
     frame - sceneStartFrame,
     [0, 8],
@@ -129,13 +137,12 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
 
-  // Gradient fallback
-  const gradientSet = GRADIENT_SETS[currentSceneIndex % GRADIENT_SETS.length];
-  const gradientAngle = interpolate(frame, [0, durationInFrames], [0, 360]);
+  // Background gradient angle — slow rotation
+  const gradientAngle = interpolate(frame, [0, durationInFrames], [135, 225]);
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {/* Layer 1: Per-scene background */}
+    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
+      {/* Layer 1: Background — images or vibrant gradients */}
       {currentSceneImage ? (
         <>
           {prevSceneImage &&
@@ -165,22 +172,92 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
           </AbsoluteFill>
         </>
       ) : (
+        /* Vibrant gradient background */
         <AbsoluteFill
           style={{
-            background: `linear-gradient(${gradientAngle}deg, ${gradientSet[0]}, ${gradientSet[1]}, ${gradientSet[2]})`,
+            background: `linear-gradient(${gradientAngle}deg, ${theme.bg[0]} 0%, ${theme.bg[1]} 50%, ${theme.bg[2]} 100%)`,
           }}
         />
       )}
 
-      {/* Layer 2: Dark vignette */}
+      {/* Layer 2: Floating shapes (always visible, adds depth) */}
+      {!currentSceneImage &&
+        SHAPES.map((shape, i) => {
+          const x =
+            shape.xBase + Math.sin(frame * shape.speed + shape.phase) * 12;
+          const y =
+            shape.yBase + Math.cos(frame * shape.speed * 0.7 + shape.phase) * 8;
+          const scale = 1 + Math.sin(frame * shape.speed * 0.5 + i) * 0.15;
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: `${x}%`,
+                top: `${y}%`,
+                width: shape.size,
+                height: shape.size,
+                borderRadius: "50%",
+                background: `radial-gradient(circle, ${theme.accent}${Math.round(shape.opacity * 255).toString(16).padStart(2, "0")} 0%, transparent 70%)`,
+                transform: `translate(-50%, -50%) scale(${scale})`,
+                filter: "blur(40px)",
+              }}
+            />
+          );
+        })}
+
+      {/* Layer 3: Subtle noise/grid overlay for texture */}
+      {!currentSceneImage && (
+        <AbsoluteFill
+          style={{
+            background:
+              "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.02) 3px, rgba(255,255,255,0.02) 4px)",
+            mixBlendMode: "overlay",
+          }}
+        />
+      )}
+
+      {/* Layer 4: Vignette — softer, slightly colored */}
       <AbsoluteFill
         style={{
-          background:
-            "radial-gradient(ellipse at center, rgba(0,0,0,0.3) 20%, rgba(0,0,0,0.75) 100%)",
+          background: currentSceneImage
+            ? "radial-gradient(ellipse at center, rgba(0,0,0,0.25) 20%, rgba(0,0,0,0.7) 100%)"
+            : `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.45) 100%)`,
         }}
       />
 
-      {/* Layer 3: Hook slide (first segment dramatic intro) */}
+      {/* Layer 5: Floating emoji particles */}
+      {!currentSceneImage &&
+        [0, 1, 2].map((i) => {
+          const baseY = 110 - ((frame * (0.4 + i * 0.15) + i * 40) % 130);
+          const x = 15 + i * 30 + Math.sin(frame * 0.03 + i * 2) * 10;
+          const particleOpacity = interpolate(
+            baseY,
+            [-10, 10, 80, 100],
+            [0, 0.6, 0.6, 0],
+            { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+          );
+          const rotation = Math.sin(frame * 0.05 + i) * 15;
+          return (
+            <div
+              key={`emoji-${i}`}
+              style={{
+                position: "absolute",
+                left: `${x}%`,
+                top: `${baseY}%`,
+                fontSize: 48 + i * 12,
+                opacity: particleOpacity * 0.5,
+                transform: `rotate(${rotation}deg)`,
+                filter: "blur(1px)",
+                pointerEvents: "none",
+              }}
+            >
+              {segment.emoji}
+            </div>
+          );
+        })}
+
+      {/* Layer 6: Hook slide (first segment dramatic intro) */}
       {isFirstSegment && frame < hookDuration && (
         <>
           {frame < 5 && (
@@ -235,7 +312,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         </>
       )}
 
-      {/* Layer 4: Regular title (non-first segments) */}
+      {/* Layer 7: Regular title (non-first segments) */}
       {!isFirstSegment && frame < 55 && (
         <div
           style={{
@@ -279,24 +356,25 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         </div>
       )}
 
-      {/* Layer 5: Scene-based captions */}
+      {/* Layer 8: Scene-based captions */}
       <AnimatedCaptions scenes={scenes} style="brainrot" />
 
-      {/* Layer 6: Progress bar */}
+      {/* Layer 9: Progress bar */}
       <div
         style={{
           position: "absolute",
           top: 0,
           left: 0,
-          height: 4,
+          height: 5,
           width: `${progressWidth}%`,
-          backgroundColor: "#22c55e",
-          borderRadius: "0 2px 2px 0",
+          background: `linear-gradient(90deg, ${theme.accent}, #fff)`,
+          borderRadius: "0 3px 3px 0",
           zIndex: 10,
+          boxShadow: `0 0 12px ${theme.glow}`,
         }}
       />
 
-      {/* Layer 7: Segment counter */}
+      {/* Layer 10: Segment counter */}
       <div
         style={{
           position: "absolute",
@@ -304,12 +382,14 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
           right: "4%",
           padding: "6px 14px",
           borderRadius: 16,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          color: "rgba(255,255,255,0.85)",
+          backgroundColor: "rgba(0,0,0,0.45)",
+          backdropFilter: "blur(8px)",
+          color: "rgba(255,255,255,0.9)",
           fontSize: 14,
           fontWeight: 700,
           fontFamily: "system-ui, sans-serif",
           zIndex: 10,
+          border: "1px solid rgba(255,255,255,0.1)",
         }}
       >
         {segment.order + 1}

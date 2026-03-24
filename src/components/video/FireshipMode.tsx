@@ -16,6 +16,26 @@ interface FireshipModeProps {
   sceneImages?: string[];
 }
 
+// Fake code lines that scroll in the background for the "code editor" feel
+const CODE_LINES = [
+  "import { Revolution } from './history';",
+  "const causes = analyze(events);",
+  "function explain(concept) {",
+  "  return concept.simplify();",
+  "}",
+  "// key insight below ↓",
+  "export default lesson;",
+  "const quiz = generateQuiz(data);",
+  "await brain.process(knowledge);",
+  "if (understood) return nextTopic();",
+  "class StudySession {",
+  "  constructor(notes) {",
+  "    this.topics = extract(notes);",
+  "  }",
+  "}",
+  "const recall = spaced(intervals);",
+];
+
 export const FireshipMode: React.FC<FireshipModeProps> = ({
   segment,
   sceneImages = [],
@@ -27,7 +47,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
   const hasSceneImages = sceneImages.length > 0;
   const hasSingleImage = !!segment.imageUrl;
 
-  // --- Title section (enters, then fades by frame ~55) ---
+  // Title animations
   const emojiScale = spring({
     frame,
     fps,
@@ -59,13 +79,13 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
     extrapolateRight: "clamp",
   });
 
-  // --- Animated accent glows ---
-  const glow1Top = -100 + Math.sin(frame / 60) * 30;
-  const glow1Right = -100 + Math.cos(frame / 60) * 20;
-  const glow2Bottom = -80 + Math.sin(frame / 50) * 25;
-  const glow2Left = -80 + Math.cos(frame / 50) * 15;
+  // Accent glows
+  const glow1X = Math.sin(frame / 60) * 30;
+  const glow1Y = Math.cos(frame / 60) * 20;
+  const glow2X = Math.cos(frame / 50) * 15;
+  const glow2Y = Math.sin(frame / 50) * 25;
 
-  // --- Determine current scene for per-scene images ---
+  // Current scene for images
   const currentTimeMs = (frame / fps) * 1000;
   let currentSceneIndex = 0;
   for (let i = 0; i < scenes.length; i++) {
@@ -94,7 +114,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
   });
   const borderGlow = 0.15 + 0.1 * Math.sin(frame / 20);
 
-  // --- Key terms as left-edge badges ---
+  // Key terms timing
   const keyTermTimings = segment.keyTerms.map((term) => {
     const pos = segment.content.toLowerCase().indexOf(term.toLowerCase());
     if (pos < 0) return durationInFrames * 0.6;
@@ -104,16 +124,20 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
     return Math.round(40 + frac * (durationInFrames - 80));
   });
 
-  // --- Progress bar ---
+  // Progress bar
   const progressWidth = interpolate(frame, [0, durationInFrames], [0, 100], {
     extrapolateRight: "clamp",
   });
+
+  // Scrolling code lines offset
+  const codeScrollY = -(frame * 0.8) % (CODE_LINES.length * 28);
 
   return (
     <AbsoluteFill
       style={{
         background:
           "linear-gradient(160deg, #0d1117 0%, #161b22 40%, #1c2333 100%)",
+        overflow: "hidden",
       }}
     >
       {/* Subtle grid pattern */}
@@ -125,38 +149,116 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
         }}
       />
 
+      {/* Scrolling code background — faint, atmospheric */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "3%",
+          right: "3%",
+          height: "100%",
+          overflow: "hidden",
+          opacity: 0.06,
+        }}
+      >
+        <div
+          style={{
+            transform: `translateY(${codeScrollY}px)`,
+            fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+            fontSize: 14,
+            lineHeight: "28px",
+            color: "#58a6ff",
+            whiteSpace: "pre",
+          }}
+        >
+          {[...CODE_LINES, ...CODE_LINES, ...CODE_LINES].map((line, i) => (
+            <div key={i} style={{ color: i % 3 === 0 ? "#58a6ff" : i % 3 === 1 ? "#ffa657" : "#7ee787" }}>
+              {line}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Animated accent glows */}
       <div
         style={{
           position: "absolute",
-          top: glow1Top,
-          right: glow1Right,
-          width: 300,
-          height: 300,
+          top: -100 + glow1Y,
+          right: -100 + glow1X,
+          width: 350,
+          height: 350,
           borderRadius: "50%",
           background:
-            "radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)",
+            "radial-gradient(circle, rgba(88,166,255,0.12) 0%, transparent 70%)",
+          filter: "blur(20px)",
         }}
       />
       <div
         style={{
           position: "absolute",
-          bottom: glow2Bottom,
-          left: glow2Left,
-          width: 250,
-          height: 250,
+          bottom: -80 + glow2Y,
+          left: -80 + glow2X,
+          width: 280,
+          height: 280,
           borderRadius: "50%",
           background:
-            "radial-gradient(circle, rgba(255,166,87,0.06) 0%, transparent 70%)",
+            "radial-gradient(circle, rgba(255,166,87,0.08) 0%, transparent 70%)",
+          filter: "blur(20px)",
         }}
       />
+      {/* Center accent glow — follows scene color */}
+      <div
+        style={{
+          position: "absolute",
+          top: "40%",
+          left: "50%",
+          width: 400,
+          height: 400,
+          borderRadius: "50%",
+          background: `radial-gradient(circle, rgba(88,166,255,${0.04 + Math.sin(frame / 30) * 0.02}) 0%, transparent 70%)`,
+          transform: "translate(-50%, -50%)",
+          filter: "blur(40px)",
+        }}
+      />
+
+      {/* Editor chrome — top bar */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 36,
+          background: "rgba(13,17,23,0.9)",
+          borderBottom: "1px solid rgba(48,54,61,0.6)",
+          display: "flex",
+          alignItems: "center",
+          padding: "0 14px",
+          gap: 8,
+          zIndex: 8,
+        }}
+      >
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ff5f57" }} />
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#febc2e" }} />
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#28c840" }} />
+        <span
+          style={{
+            marginLeft: 12,
+            fontSize: 11,
+            color: "rgba(139,148,158,0.7)",
+            fontFamily: "'SF Mono', monospace",
+          }}
+        >
+          lesson.ts — NotesTok
+        </span>
+      </div>
 
       {/* Title section */}
       {frame < 55 && (
         <div
           style={{
             position: "absolute",
-            top: "5%",
+            top: "6%",
             left: 0,
             right: 0,
             display: "flex",
@@ -320,13 +422,14 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
       <div
         style={{
           position: "absolute",
-          top: 0,
+          top: 36,
           left: 0,
-          height: 3,
+          height: 2,
           width: `${progressWidth}%`,
-          backgroundColor: "#58a6ff",
-          borderRadius: "0 2px 2px 0",
+          background: "linear-gradient(90deg, #58a6ff, #79c0ff)",
+          borderRadius: "0 1px 1px 0",
           zIndex: 10,
+          boxShadow: "0 0 8px rgba(88,166,255,0.4)",
         }}
       />
 
@@ -334,15 +437,17 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
       <div
         style={{
           position: "absolute",
-          top: "3%",
+          top: 48,
           right: "4%",
-          padding: "5px 12px",
+          padding: "4px 10px",
           borderRadius: 6,
-          backgroundColor: "rgba(48,54,61,0.5)",
+          backgroundColor: "rgba(48,54,61,0.6)",
+          border: "1px solid rgba(48,54,61,0.8)",
           color: "rgba(230,237,243,0.6)",
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: 600,
           fontFamily: "'SF Mono', monospace",
+          zIndex: 10,
         }}
       >
         {segment.order + 1}

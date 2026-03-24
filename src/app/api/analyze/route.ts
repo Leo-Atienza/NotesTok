@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ai, MODEL } from "@/lib/gemini";
+import { getAI, MODEL, withRetry } from "@/lib/gemini";
 import { CONTENT_ANALYSIS_PROMPT } from "@/lib/prompts";
 import { contentAnalysisSchema } from "@/lib/manifest-schema";
 import type { ContentAnalysis } from "@/lib/types";
@@ -44,14 +44,16 @@ export async function POST(req: NextRequest) {
       notesText = notesText.slice(0, 8000);
     }
 
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: CONTENT_ANALYSIS_PROMPT + notesText,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: contentAnalysisSchema,
-      },
-    });
+    const response = await withRetry(() =>
+      getAI().models.generateContent({
+        model: MODEL,
+        contents: CONTENT_ANALYSIS_PROMPT + notesText,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: contentAnalysisSchema,
+        },
+      })
+    );
 
     const text = response.text;
     if (!text) {

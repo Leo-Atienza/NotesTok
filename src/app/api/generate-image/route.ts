@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ai } from "@/lib/gemini";
+import { getAI, withRetry } from "@/lib/gemini";
 
 export const runtime = "nodejs";
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     // Try Gemini native image generation models
     for (const model of IMAGE_MODELS) {
       try {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
           model,
           contents: fullPrompt,
           config: {
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     // Try Imagen 4 as last resort (requires paid plan)
     try {
-      const response = await ai.models.generateImages({
+      const response = await getAI().models.generateImages({
         model: "imagen-4.0-generate-001",
         prompt: `Educational illustration: ${prompt}. Clean, modern, colorful, no text.`,
         config: {

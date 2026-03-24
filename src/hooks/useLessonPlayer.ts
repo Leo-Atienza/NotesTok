@@ -96,7 +96,7 @@ export function useLessonPlayer() {
         return {
           ...prev,
           playerState: "quiz-feedback",
-          xp: prev.xp + quiz.xpReward,
+          xp: prev.xp + (quiz.xpReward || 15),
           quizAttempts: attempts,
           selectedAnswer: selectedIndex,
           showingExplanation: true,

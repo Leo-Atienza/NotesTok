@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ai, MODEL } from "@/lib/gemini";
+import { getAI, MODEL, withRetry } from "@/lib/gemini";
 import { MANIFEST_GENERATION_PROMPT } from "@/lib/prompts";
 import { lessonManifestSchema } from "@/lib/manifest-schema";
 import type { ContentAnalysis, LessonManifest } from "@/lib/types";
@@ -15,14 +15,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: MANIFEST_GENERATION_PROMPT + JSON.stringify(analysis, null, 2),
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: lessonManifestSchema,
-      },
-    });
+    const response = await withRetry(() =>
+      getAI().models.generateContent({
+        model: MODEL,
+        contents: MANIFEST_GENERATION_PROMPT + JSON.stringify(analysis, null, 2),
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: lessonManifestSchema,
+        },
+      })
+    );
 
     const text = response.text;
     if (!text) {
