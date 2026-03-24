@@ -50,3 +50,5 @@ next-env.d.ts
 # auto-generated agent files
 CLAUDE.md
 AGENTS.md
+
+.vercel
