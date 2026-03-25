@@ -8,6 +8,7 @@ import {
 } from "./LessonVideoComposition";
 import { getSegmentDurationInFrames } from "./CaptionEngine";
 import type { Segment } from "@/lib/types";
+import type { ResolvedSegmentResources } from "@/lib/media-types";
 
 // Remotion Player expects a loosely-typed component for its `component` prop
 const CompositionComponent = LessonVideoComposition as unknown as React.FC<Record<string, unknown>>;
@@ -21,6 +22,7 @@ interface VideoPlayerProps {
   voiceoverUrl?: string;
   backgroundMusicUrl?: string;
   transitionSfxUrl?: string;
+  cauldronResources?: ResolvedSegmentResources;
 }
 
 const FPS = 30;
@@ -36,6 +38,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   voiceoverUrl,
   backgroundMusicUrl,
   transitionSfxUrl,
+  cauldronResources,
 }) => {
   const playerRef = useRef<PlayerRef>(null);
   const voiceoverRef = useRef<HTMLAudioElement | null>(null);
@@ -54,8 +57,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       backgroundVideoUrl: segment.backgroundVideoUrl,
       backgroundPhotoUrl: segment.backgroundPhotoUrl,
       scenePhotoUrls: segment.scenePhotoUrls,
+      cauldronResources,
     }),
-    [segment, mode, sceneImages]
+    [segment, mode, sceneImages, cauldronResources]
   );
 
   // Handle pause/resume from parent (e.g., quiz gates)

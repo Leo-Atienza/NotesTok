@@ -13,7 +13,13 @@ import {
 } from "firebase/firestore";
 import { getDB, isFirebaseConfigured } from "./firebase";
 import { searchVideos, searchPhotos, pickBestVideoFile, isPexelsConfigured } from "./pexels";
-import type { MediaAsset, MediaQuery, PexelsVideo, PexelsPhoto, AssetMood } from "./media-types";
+import * as pixabay from "./pixabay";
+import { searchGifs, getGifMp4Url, isKlipyConfigured } from "./klipy";
+import type {
+  MediaAsset, MediaQuery, PexelsVideo, PexelsPhoto, AssetMood,
+  KlipyGif, PixabayVideo, PixabayPhoto,
+  GifCategory, GifEmotion, CharacterId, CharacterPose,
+} from "./media-types";
 
 const COLLECTION = "media_assets";
 
@@ -390,4 +396,270 @@ export function findMusic(subject: string): string | null {
 
 export function findSfx(name: string): string | null {
   return STATIC_SFX[name.toLowerCase()] ?? null;
+}
+
+// === GIF Ingestion (Klipy) ===
+
+export async function ingestKlipyGif(
+  gif: KlipyGif,
+  subjects: string[],
+  tags: string[],
+  category: GifCategory = "reaction",
+  emotion?: GifEmotion
+): Promise<MediaAsset | null> {
+  if (!isFirebaseConfigured()) return null;
+
+  const db = getDB();
+  const docId = `klipy-gif-${gif.id}`;
+
+  // Dedup
+  try {
+    const existing = await getDocs(
+      query(collection(db, COLLECTION), where("sourceId", "==", gif.id), where("source", "==", "klipy"), firestoreLimit(1))
+    );
+    if (!existing.empty) return docToAsset(existing.docs[0]);
+  } catch { /* continue */ }
+
+  const mp4Url = getGifMp4Url(gif);
+  const asset = {
+    type: "gif" as const,
+    storageUrl: mp4Url,
+    thumbnailUrl: gif.preview,
+    fileSize: 0,
+    format: "mp4",
+    duration: gif.duration,
+    width: gif.width,
+    height: gif.height,
+    subjects: subjects.map((s) => s.toLowerCase()),
+    moods: ["playful"] as AssetMood[],
+    energy: "high" as const,
+    tags: [...tags.map((t) => t.toLowerCase()), category, ...(emotion ? [emotion] : [])],
+    colors: [],
+    orientation: (gif.height > gif.width ? "portrait" : "landscape") as MediaAsset["orientation"],
+    source: "klipy" as const,
+    sourceId: gif.id,
+    license: "klipy",
+    loopable: true,
+    usageCount: 0,
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, COLLECTION, docId), asset);
+    return { ...asset, id: docId, createdAt: new Date() } as unknown as MediaAsset;
+  } catch {
+    return null;
+  }
+}
+
+// === Pixabay Ingestion ===
+
+export async function ingestPixabayVideo(
+  video: PixabayVideo,
+  subjects: string[],
+  moods: AssetMood[],
+  tags: string[]
+): Promise<MediaAsset | null> {
+  if (!isFirebaseConfigured()) return null;
+
+  const db = getDB();
+  const docId = `pixabay-video-${video.id}`;
+
+  // Dedup
+  try {
+    const existing = await getDocs(
+      query(collection(db, COLLECTION), where("sourceId", "==", String(video.id)), where("source", "==", "pixabay"), firestoreLimit(1))
+    );
+    if (!existing.empty) return docToAsset(existing.docs[0]);
+  } catch { /* continue */ }
+
+  const bestFile = pixabay.pickBestVideoFile(video);
+  if (!bestFile) return null;
+
+  const asset = {
+    type: "video" as const,
+    storageUrl: bestFile.url,
+    fileSize: 0,
+    format: "mp4",
+    duration: video.duration,
+    width: bestFile.width,
+    height: bestFile.height,
+    subjects: subjects.map((s) => s.toLowerCase()),
+    moods,
+    energy: "medium" as const,
+    tags: [...tags.map((t) => t.toLowerCase()), ...video.tags.split(",").map((t) => t.trim().toLowerCase())],
+    colors: [],
+    orientation: (bestFile.height > bestFile.width ? "portrait" : "landscape") as MediaAsset["orientation"],
+    source: "pixabay" as const,
+    sourceId: String(video.id),
+    attribution: `Video by ${video.user} on Pixabay`,
+    license: "pixabay",
+    loopable: video.duration <= 30,
+    usageCount: 0,
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, COLLECTION, docId), asset);
+    return { ...asset, id: docId, createdAt: new Date() } as unknown as MediaAsset;
+  } catch {
+    return null;
+  }
+}
+
+export async function ingestPixabayPhoto(
+  photo: PixabayPhoto,
+  subjects: string[],
+  moods: AssetMood[],
+  tags: string[]
+): Promise<MediaAsset | null> {
+  if (!isFirebaseConfigured()) return null;
+
+  const db = getDB();
+  const docId = `pixabay-photo-${photo.id}`;
+
+  // Dedup
+  try {
+    const existing = await getDocs(
+      query(collection(db, COLLECTION), where("sourceId", "==", String(photo.id)), where("source", "==", "pixabay"), firestoreLimit(1))
+    );
+    if (!existing.empty) return docToAsset(existing.docs[0]);
+  } catch { /* continue */ }
+
+  const isPortrait = photo.imageHeight > photo.imageWidth;
+  const asset = {
+    type: "photo" as const,
+    storageUrl: photo.largeImageURL,
+    thumbnailUrl: photo.webformatURL,
+    fileSize: 0,
+    format: "jpg",
+    width: photo.imageWidth,
+    height: photo.imageHeight,
+    subjects: subjects.map((s) => s.toLowerCase()),
+    moods,
+    energy: "medium" as const,
+    tags: [...tags.map((t) => t.toLowerCase()), ...photo.tags.split(",").map((t) => t.trim().toLowerCase())],
+    colors: [],
+    orientation: (isPortrait ? "portrait" : "landscape") as MediaAsset["orientation"],
+    source: "pixabay" as const,
+    sourceId: String(photo.id),
+    attribution: `Photo by ${photo.user} on Pixabay`,
+    license: "pixabay",
+    loopable: false,
+    usageCount: 0,
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, COLLECTION, docId), asset);
+    return { ...asset, id: docId, createdAt: new Date() } as unknown as MediaAsset;
+  } catch {
+    return null;
+  }
+}
+
+// === Character Asset Ingestion ===
+
+export async function ingestCharacterAsset(
+  characterId: CharacterId,
+  pose: CharacterPose,
+  imageDataUrl: string
+): Promise<MediaAsset | null> {
+  if (!isFirebaseConfigured()) return null;
+
+  const db = getDB();
+  const docId = `character-${characterId}-${pose}`;
+
+  // Dedup
+  try {
+    const existing = await getDocs(
+      query(collection(db, COLLECTION), where("sourceId", "==", docId), where("type", "==", "character"), firestoreLimit(1))
+    );
+    if (!existing.empty) return docToAsset(existing.docs[0]);
+  } catch { /* continue */ }
+
+  const asset = {
+    type: "character" as const,
+    storageUrl: imageDataUrl,
+    fileSize: 0,
+    format: "png",
+    width: 512,
+    height: 512,
+    subjects: [],
+    moods: [] as AssetMood[],
+    energy: "medium" as const,
+    tags: [characterId, pose],
+    colors: [],
+    source: "generated" as const,
+    sourceId: docId,
+    license: "generated",
+    loopable: false,
+    usageCount: 0,
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, COLLECTION, docId), asset);
+    return { ...asset, id: docId, createdAt: new Date() } as unknown as MediaAsset;
+  } catch {
+    return null;
+  }
+}
+
+// === Enhanced findOrFetch with Pixabay + Klipy fallbacks ===
+
+export async function findOrFetchGifs(
+  query: string,
+  emotion?: GifEmotion,
+  subjects: string[] = [],
+  limit = 3
+): Promise<MediaAssetResult[]> {
+  // 1. Try DB first
+  const dbResults = await queryAssets({
+    type: "gif",
+    tags: [query.toLowerCase(), ...(emotion ? [emotion] : [])],
+    limit,
+  });
+
+  if (dbResults.length >= limit) {
+    return dbResults.map(assetToResult);
+  }
+
+  // 2. Fall back to Klipy
+  if (!isKlipyConfigured()) return dbResults.map(assetToResult);
+
+  const gifs = await searchGifs(`${query} ${emotion ?? ""}`.trim(), { limit });
+  const results: MediaAssetResult[] = dbResults.map(assetToResult);
+  const seen = new Set(results.map((r) => r.url));
+
+  for (const gif of gifs) {
+    const mp4Url = getGifMp4Url(gif);
+    if (!seen.has(mp4Url)) {
+      seen.add(mp4Url);
+      results.push({
+        url: mp4Url,
+        thumbnailUrl: gif.preview,
+        type: "video", // GIF MP4s render as video in Remotion
+        width: gif.width,
+        height: gif.height,
+        duration: gif.duration,
+      });
+      // Fire-and-forget ingestion
+      ingestKlipyGif(gif, subjects, [query.toLowerCase()], "reaction", emotion).catch(() => {});
+    }
+  }
+
+  return results;
+}
+
+export async function findCharacterAsset(
+  characterId: CharacterId,
+  pose: CharacterPose
+): Promise<MediaAsset | null> {
+  const results = await queryAssets({
+    type: "character",
+    tags: [characterId, pose],
+    limit: 1,
+  });
+  return results[0] ?? null;
 }

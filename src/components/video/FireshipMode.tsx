@@ -9,7 +9,16 @@ import {
 } from "remotion";
 import { AnimatedCaptions } from "./AnimatedCaptions";
 import { generateSceneData } from "./CaptionEngine";
+import {
+  CharacterLayer,
+  GifOverlay,
+  LottieLayer,
+  StickerBurst,
+  MemeTextOverlay,
+  POVOverlay,
+} from "./layers";
 import type { Segment } from "@/lib/types";
+import type { ResolvedSegmentResources } from "@/lib/media-types";
 
 interface FireshipModeProps {
   segment: Segment;
@@ -17,6 +26,7 @@ interface FireshipModeProps {
   backgroundVideoUrl?: string;
   backgroundPhotoUrl?: string;
   scenePhotoUrls?: string[];
+  cauldronResources?: ResolvedSegmentResources;
 }
 
 // Code lines for atmospheric background
@@ -45,6 +55,7 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
   backgroundVideoUrl,
   backgroundPhotoUrl,
   scenePhotoUrls = [],
+  cauldronResources,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -422,6 +433,55 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
           boxShadow: "0 0 8px rgba(88,166,255,0.4)",
         }}
       />
+
+      {/* === Cauldron Layers (Fireship-styled) === */}
+      {(() => {
+        const sceneResources = cauldronResources?.scenes?.[currentSceneIndex];
+        if (!sceneResources) return null;
+        return (
+          <>
+            <CharacterLayer
+              imageUrl={sceneResources.characterImageUrl}
+              mode="fireship"
+              position="bottom-right"
+              enterFrame={sceneStartFrame + 12}
+            />
+            <GifOverlay
+              gifUrl={sceneResources.gifUrl}
+              position={sceneResources.gifPosition}
+              mode="fireship"
+              showFromFrame={sceneStartFrame + 20}
+              durationFrames={60}
+            />
+            <LottieLayer
+              lottieUrl={sceneResources.lottieUrl}
+              mode="fireship"
+              showFromFrame={sceneStartFrame}
+              durationFrames={30}
+              opacity={0.4}
+            />
+            <StickerBurst
+              stickerUrls={sceneResources.stickerUrls}
+              mode="fireship"
+              showFromFrame={sceneStartFrame + 8}
+              durationFrames={35}
+            />
+            <POVOverlay
+              text={sceneResources.povText}
+              mode="fireship"
+              showFromFrame={0}
+              durationFrames={60}
+            />
+            <MemeTextOverlay
+              topText={sceneResources.memeText?.top}
+              bottomText={sceneResources.memeText?.bottom}
+              mode="fireship"
+              showFromFrame={sceneStartFrame}
+              durationFrames={75}
+            />
+          </>
+        );
+      })()}
 
       {/* Scene counter */}
       <div

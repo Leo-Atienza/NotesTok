@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Brain, FileText, Loader2 } from "lucide-react";
 import type { LessonManifest, Segment } from "@/lib/types";
+import type { ResolvedSegmentResources } from "@/lib/media-types";
 import { DEMO_LESSON_ID } from "@/lib/demo-lesson";
 import { getDemoImages } from "@/lib/demo-images";
 import { getLessonImages, saveLessonImages } from "@/lib/lesson-store";
@@ -26,6 +27,7 @@ export function VideosView({ manifest }: VideosViewProps) {
   const [enrichedManifest, setEnrichedManifest] = useState<LessonManifest>(manifest);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
+  const [cauldronResources, setCauldronResources] = useState<Record<string, ResolvedSegmentResources>>({});
 
   // Resolve stock media + voiceover on mount
   useEffect(() => {
@@ -93,6 +95,38 @@ export function VideosView({ manifest }: VideosViewProps) {
         }
       } catch {
         // Graceful — falls back to Web Speech
+      }
+
+      // Phase 3: Scout cauldron resources (GIFs, characters, Lotties, memes)
+      setLoadingStep("Scouting visual assets...");
+      try {
+        const scoutResults: Record<string, ResolvedSegmentResources> = {};
+        // Scout each segment in parallel (fire all requests)
+        const scoutPromises = manifest.segments.map(async (seg) => {
+          try {
+            const res = await fetch("/api/media/scout", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                segment: seg,
+                subject: manifest.subject,
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              scoutResults[seg.id] = data;
+            }
+          } catch {
+            // Graceful — continue without cauldron resources for this segment
+          }
+        });
+        await Promise.all(scoutPromises);
+
+        if (!cancelled) {
+          setCauldronResources(scoutResults);
+        }
+      } catch {
+        // Graceful — videos still work without cauldron resources
       }
 
       if (!cancelled) {
@@ -257,6 +291,7 @@ export function VideosView({ manifest }: VideosViewProps) {
           voiceoverUrl={segment.voiceoverUrl}
           backgroundMusicUrl={enrichedManifest.backgroundMusicUrl}
           transitionSfxUrl={enrichedManifest.transitionSfxUrl}
+          cauldronResources={cauldronResources[segment.id]}
         />
       </div>
 

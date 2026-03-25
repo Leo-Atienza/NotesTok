@@ -3,6 +3,7 @@ import { AbsoluteFill } from "remotion";
 import { BrainrotMode } from "./BrainrotMode";
 import { FireshipMode } from "./FireshipMode";
 import type { Segment } from "@/lib/types";
+import type { ResolvedSegmentResources } from "@/lib/media-types";
 
 export interface LessonVideoCompositionProps {
   segment: Segment;
@@ -11,6 +12,8 @@ export interface LessonVideoCompositionProps {
   backgroundVideoUrl?: string;
   backgroundPhotoUrl?: string;
   scenePhotoUrls?: string[];
+  /** Cauldron resources from the Resource Scout */
+  cauldronResources?: ResolvedSegmentResources;
 }
 
 export const LessonVideoComposition: React.FC<LessonVideoCompositionProps> = ({
@@ -20,25 +23,23 @@ export const LessonVideoComposition: React.FC<LessonVideoCompositionProps> = ({
   backgroundVideoUrl,
   backgroundPhotoUrl,
   scenePhotoUrls,
+  cauldronResources,
 }) => {
+  const commonProps = {
+    segment,
+    sceneImages,
+    backgroundVideoUrl,
+    backgroundPhotoUrl,
+    scenePhotoUrls,
+    cauldronResources,
+  };
+
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {mode === "brainrot" ? (
-        <BrainrotMode
-          segment={segment}
-          sceneImages={sceneImages}
-          backgroundVideoUrl={backgroundVideoUrl}
-          backgroundPhotoUrl={backgroundPhotoUrl}
-          scenePhotoUrls={scenePhotoUrls}
-        />
+        <BrainrotMode {...commonProps} />
       ) : (
-        <FireshipMode
-          segment={segment}
-          sceneImages={sceneImages}
-          backgroundVideoUrl={backgroundVideoUrl}
-          backgroundPhotoUrl={backgroundPhotoUrl}
-          scenePhotoUrls={scenePhotoUrls}
-        />
+        <FireshipMode {...commonProps} />
       )}
     </AbsoluteFill>
   );

@@ -1,7 +1,6 @@
 import React from "react";
 import {
   AbsoluteFill,
-  OffthreadVideo,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
@@ -9,7 +8,18 @@ import {
 } from "remotion";
 import { AnimatedCaptions } from "./AnimatedCaptions";
 import { generateSceneData } from "./CaptionEngine";
+import {
+  BackgroundLayer,
+  CharacterLayer,
+  GifOverlay,
+  LottieLayer,
+  StickerBurst,
+  MemeTextOverlay,
+  POVOverlay,
+} from "./layers";
+import { pickTransition, getFlashOpacity, getTransitionTransform } from "./transitions";
 import type { Segment } from "@/lib/types";
+import type { ResolvedSegmentResources } from "@/lib/media-types";
 
 interface BrainrotModeProps {
   segment: Segment;
@@ -17,9 +27,10 @@ interface BrainrotModeProps {
   backgroundVideoUrl?: string;
   backgroundPhotoUrl?: string;
   scenePhotoUrls?: string[];
+  cauldronResources?: ResolvedSegmentResources;
 }
 
-// Camera presets — Ken Burns zoom/pan for each scene (expanded set)
+// Camera presets — Ken Burns zoom/pan for each scene
 const CAMERA_PRESETS = [
   { scale: 1.15, x: 0, y: -15, rotate: 0 },
   { scale: 1.25, x: -30, y: -10, rotate: -1 },
@@ -35,7 +46,7 @@ const CAMERA_PRESETS = [
   { scale: 1.25, x: -25, y: -20, rotate: 1 },
 ];
 
-// Gradient themes when no images — dramatic, cinematic
+// Gradient themes when no images
 const SCENE_THEMES = [
   { bg: ["#1a0533", "#3b0764", "#7c3aed"], accent: "#a78bfa" },
   { bg: ["#2d0a0a", "#7f1d1d", "#dc2626"], accent: "#f87171" },
@@ -52,6 +63,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
   backgroundVideoUrl,
   backgroundPhotoUrl,
   scenePhotoUrls = [],
+  cauldronResources,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -89,9 +101,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
     : 0;
 
   // Title for non-first segments
-  const titleEntryOpacity = interpolate(frame, [0, 10], [0, 1], {
-    extrapolateRight: "clamp",
-  });
+  const titleEntryOpacity = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: "clamp" });
   const titleSlide = spring({ frame, fps, config: { damping: 12, mass: 0.7 } });
   const titleY = interpolate(titleSlide, [0, 1], [-30, 0]);
   const titleExitOpacity = interpolate(frame, [35, 45], [1, 0], {
@@ -113,139 +123,68 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
     ((scenes[currentSceneIndex]?.startMs ?? 0) / 1000) * fps
   );
   const sceneProgress = Math.min((frame - sceneStartFrame) * 0.015, 1);
+  const frameSinceSceneStart = frame - sceneStartFrame;
 
-  // Determine background for current scene: video > photo > Gemini image > gradient
-  const currentScenePhoto =
-    hasScenePhotos && scenePhotoUrls[currentSceneIndex]
-      ? scenePhotoUrls[currentSceneIndex]
-      : null;
-  const currentSceneImage =
-    hasSceneImages && sceneImages[currentSceneIndex]
-      ? sceneImages[currentSceneIndex]
-      : segment.imageUrl || null;
-
-  const hasVideo = !!backgroundVideoUrl;
-  const hasPhoto = currentScenePhoto || backgroundPhotoUrl;
-  const hasImage = currentSceneImage;
+  // Scene photo/image lookup
+  const currentScenePhoto = hasScenePhotos ? scenePhotoUrls[currentSceneIndex] ?? null : null;
+  const currentSceneImage = hasSceneImages
+    ? sceneImages[currentSceneIndex] ?? segment.imageUrl ?? null
+    : segment.imageUrl ?? null;
 
   const prevSceneIndex = Math.max(0, currentSceneIndex - 1);
-  const prevScenePhoto =
-    hasScenePhotos && scenePhotoUrls[prevSceneIndex] ? scenePhotoUrls[prevSceneIndex] : null;
-  const prevSceneImage =
-    hasSceneImages && sceneImages[prevSceneIndex] ? sceneImages[prevSceneIndex] : null;
+  const prevScenePhoto = hasScenePhotos ? scenePhotoUrls[prevSceneIndex] ?? null : null;
+  const prevSceneImage = hasSceneImages ? sceneImages[prevSceneIndex] ?? null : null;
 
-  // Scene transition — crossfade
-  const transitionProgress = interpolate(
-    frame - sceneStartFrame,
-    [0, 10],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
+  const transitionProgress = interpolate(frameSinceSceneStart, [0, 10], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
 
-  // Scene transition effects
-  const isSceneTransition = frame - sceneStartFrame < 8 && currentSceneIndex > 0;
-  const transitionType = currentSceneIndex % 3; // 0=flash, 1=zoom punch, 2=crossfade only
-
-  // White flash
-  const flashOpacity = transitionType === 0
-    ? interpolate(frame - sceneStartFrame, [0, 3], [0.4, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+  // Transition effects
+  const transitionType = pickTransition(currentSceneIndex);
+  const transitionTransform = currentSceneIndex > 0
+    ? getTransitionTransform(transitionType, frameSinceSceneStart)
+    : {};
+  const flashOpacity = currentSceneIndex > 0
+    ? getFlashOpacity(transitionType, frameSinceSceneStart)
     : 0;
 
-  // Zoom punch
-  const zoomPunchScale = transitionType === 1
-    ? interpolate(frame - sceneStartFrame, [0, 5], [1.06, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
-    : 1;
-
-  // Background gradient rotation for fallback
+  // Gradient rotation for fallback
   const gradientAngle = interpolate(frame, [0, durationInFrames], [135, 225]);
 
-  return (
-    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden", transform: `scale(${zoomPunchScale})` }}>
-      {/* === LAYER 1: FULL-SCREEN BACKGROUND === */}
-      {hasVideo ? (
-        /* Stock video background — full-screen, muted, looping */
-        <AbsoluteFill>
-          <OffthreadVideo
-            src={backgroundVideoUrl!}
-            muted
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
-        </AbsoluteFill>
-      ) : (hasPhoto || hasImage) ? (
-        <>
-          {/* Previous photo — fading out during transition */}
-          {(prevScenePhoto || prevSceneImage) && transitionProgress < 1 && (
-            <AbsoluteFill style={{ opacity: 1 - transitionProgress }}>
-              <img
-                src={(prevScenePhoto || prevSceneImage)!}
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            </AbsoluteFill>
-          )}
-          {/* Current photo/image — full screen with Ken Burns */}
-          <AbsoluteFill
-            style={{
-              transform: `scale(${1 + (camera.scale - 1) * sceneProgress}) translate(${camera.x * sceneProgress * 0.5}px, ${camera.y * sceneProgress * 0.5}px) rotate(${(camera.rotate ?? 0) * sceneProgress}deg)`,
-              opacity: (prevScenePhoto || prevSceneImage) && transitionProgress < 1
-                ? transitionProgress
-                : 1,
-            }}
-          >
-            <img
-              src={(currentScenePhoto || backgroundPhotoUrl || currentSceneImage)!}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          </AbsoluteFill>
-        </>
-      ) : (
-        /* Fallback: dramatic gradient + large blurred blobs */
-        <>
-          <AbsoluteFill
-            style={{
-              background: `linear-gradient(${gradientAngle}deg, ${theme.bg[0]} 0%, ${theme.bg[1]} 50%, ${theme.bg[2]} 100%)`,
-            }}
-          />
-          {/* Drifting blurred color blobs for depth */}
-          {[0, 1, 2].map((i) => {
-            const x = 20 + i * 30 + Math.sin(frame * 0.005 + i * 2) * 12;
-            const y = 25 + i * 20 + Math.cos(frame * 0.004 + i) * 10;
-            const size = 300 + i * 100;
-            return (
-              <div
-                key={i}
-                style={{
-                  position: "absolute",
-                  left: `${x}%`,
-                  top: `${y}%`,
-                  width: size,
-                  height: size,
-                  borderRadius: "50%",
-                  background: `radial-gradient(circle, ${theme.accent}30 0%, transparent 70%)`,
-                  transform: "translate(-50%, -50%)",
-                  filter: "blur(60px)",
-                  opacity: 0.6,
-                }}
-              />
-            );
-          })}
-          {/* Subtle grain texture overlay */}
-          <AbsoluteFill
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E")`,
-              opacity: 0.5,
-            }}
-          />
-        </>
-      )}
+  // Cauldron resources for current scene
+  const sceneResources = cauldronResources?.scenes?.[currentSceneIndex];
 
-      {/* === LAYER 2: Dark gradient overlay for caption readability === */}
+  // Calculate GIF show frame relative to scene start
+  const gifShowFrame = sceneStartFrame + 15;
+  const stickerShowFrame = sceneStartFrame + 5;
+  const lottieShowFrame = sceneStartFrame;
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden", ...transitionTransform }}>
+      {/* === LAYER 1: Background === */}
+      <BackgroundLayer
+        backgroundVideoUrl={sceneResources?.backgroundUrl && sceneResources.backgroundType === "video"
+          ? sceneResources.backgroundUrl
+          : backgroundVideoUrl}
+        backgroundPhotoUrl={sceneResources?.backgroundUrl && sceneResources.backgroundType === "photo"
+          ? sceneResources.backgroundUrl
+          : backgroundPhotoUrl}
+        currentScenePhoto={currentScenePhoto}
+        currentSceneImage={currentSceneImage}
+        prevScenePhoto={prevScenePhoto}
+        prevSceneImage={prevSceneImage}
+        camera={camera}
+        sceneProgress={sceneProgress}
+        transitionProgress={transitionProgress}
+        theme={theme}
+        gradientAngle={gradientAngle}
+      />
+
+      {/* === LAYER 2: Dark gradient overlay === */}
       <AbsoluteFill
         style={{
-          background: hasVideo || hasPhoto || hasImage
+          background: backgroundVideoUrl || currentScenePhoto || currentSceneImage
             ? "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.2) 40%, rgba(0,0,0,0.5) 65%, rgba(0,0,0,0.8) 100%)"
             : "linear-gradient(to bottom, transparent 0%, transparent 50%, rgba(0,0,0,0.4) 80%, rgba(0,0,0,0.7) 100%)",
         }}
@@ -253,19 +192,67 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
 
       {/* === LAYER 3: Top vignette === */}
       <AbsoluteFill
-        style={{
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 15%)",
-        }}
+        style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 15%)" }}
       />
 
-      {/* === LAYER 4: Scene transition flash === */}
+      {/* === LAYER 4: Character overlay === */}
+      <CharacterLayer
+        imageUrl={sceneResources?.characterImageUrl}
+        mode="brainrot"
+        position="bottom-right"
+        enterFrame={sceneStartFrame + 8}
+      />
+
+      {/* === LAYER 5: Reaction GIF overlay === */}
+      <GifOverlay
+        gifUrl={sceneResources?.gifUrl}
+        position={sceneResources?.gifPosition}
+        mode="brainrot"
+        showFromFrame={gifShowFrame}
+        durationFrames={75}
+      />
+
+      {/* === LAYER 6: Lottie effect === */}
+      <LottieLayer
+        lottieUrl={sceneResources?.lottieUrl}
+        mode="brainrot"
+        showFromFrame={lottieShowFrame}
+        durationFrames={45}
+      />
+
+      {/* === LAYER 7: Sticker/emoji burst === */}
+      <StickerBurst
+        stickerUrls={sceneResources?.stickerUrls}
+        mode="brainrot"
+        showFromFrame={stickerShowFrame}
+        durationFrames={45}
+      />
+
+      {/* === LAYER 8: Scene transition flash === */}
       {flashOpacity > 0 && (
         <AbsoluteFill
           style={{ backgroundColor: "#fff", opacity: flashOpacity, zIndex: 15 }}
         />
       )}
 
-      {/* === LAYER 5: Hook slide (first segment intro) === */}
+      {/* === LAYER 9: POV text (first scene only) === */}
+      <POVOverlay
+        text={sceneResources?.povText}
+        mode="brainrot"
+        showFromFrame={0}
+        durationFrames={75}
+      />
+
+      {/* === LAYER 10: Meme text bars === */}
+      <MemeTextOverlay
+        topText={sceneResources?.memeText?.top}
+        bottomText={sceneResources?.memeText?.bottom}
+        mode="brainrot"
+        showFromFrame={sceneStartFrame}
+        durationFrames={90}
+      />
+
+      {/* === Hook slide (first segment intro) === */}
       {isFirstSegment && frame < hookDuration && (
         <>
           {frame < 4 && (
@@ -320,7 +307,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         </>
       )}
 
-      {/* === LAYER 6: Title (non-first segments) === */}
+      {/* === Title (non-first segments) === */}
       {!isFirstSegment && frame < 45 && (
         <div
           style={{
@@ -336,13 +323,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
             zIndex: 5,
           }}
         >
-          <span
-            style={{
-              fontSize: 64,
-              display: "inline-block",
-              filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.7))",
-            }}
-          >
+          <span style={{ fontSize: 64, display: "inline-block", filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.7))" }}>
             {segment.emoji}
           </span>
           <h2
@@ -352,9 +333,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
               fontWeight: 800,
               textAlign: "center",
               margin: "8px 24px 0",
-              textShadow:
-                "3px 3px 0 rgba(0,0,0,0.9), -3px -3px 0 rgba(0,0,0,0.9), " +
-                "0 4px 12px rgba(0,0,0,0.8)",
+              textShadow: "3px 3px 0 rgba(0,0,0,0.9), -3px -3px 0 rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.8)",
               fontFamily: "system-ui, -apple-system, sans-serif",
               lineHeight: 1.2,
             }}
@@ -364,10 +343,10 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         </div>
       )}
 
-      {/* === LAYER 7: Animated captions (one word at a time) === */}
+      {/* === Animated captions === */}
       <AnimatedCaptions scenes={scenes} style="brainrot" />
 
-      {/* === LAYER 8: Scene counter === */}
+      {/* === Scene counter === */}
       <div
         style={{
           position: "absolute",
@@ -388,7 +367,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         {currentSceneIndex + 1}/{scenes.length}
       </div>
 
-      {/* === LAYER 9: Progress bar === */}
+      {/* === Progress bar === */}
       <div
         style={{
           position: "absolute",
