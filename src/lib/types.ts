@@ -1,3 +1,7 @@
+// === LEARNER PROFILES ===
+
+export type LearnerProfile = "focus-seeker" | "multi-modal" | "global-scholar";
+
 // === LESSON MANIFEST (Gemini generates this) ===
 
 export interface LessonManifest {
@@ -7,6 +11,7 @@ export interface LessonManifest {
   difficulty: "beginner" | "intermediate" | "advanced";
   estimatedMinutes: number;
   totalXP: number;
+  learnerProfile?: LearnerProfile;
   segments: Segment[];
   backgroundMusicUrl?: string;
   transitionSfxUrl?: string;
@@ -67,3 +72,30 @@ export type PlayerState =
   | "quiz-feedback"
   | "panic-loading"
   | "completed";
+
+// === BUDDY CHAT ===
+
+export interface ChatMessage {
+  id: string;
+  role: "buddy" | "user" | "system";
+  content: string;
+  type: "text" | "upload" | "profile-select" | "lesson-ready" | "quiz-result";
+  timestamp: number;
+  metadata?: Record<string, unknown>;
+}
+
+// === PROGRESSION ===
+
+export interface StudyProgress {
+  totalXP: number;
+  lessonsCompleted: number;
+  studyDays: string[]; // ISO date strings
+  lessonProgress: Record<string, LessonProgress>;
+}
+
+export interface LessonProgress {
+  segmentsViewed: string[];
+  quizzesPassed: string[];
+  xpEarned: number;
+  completedAt?: number;
+}

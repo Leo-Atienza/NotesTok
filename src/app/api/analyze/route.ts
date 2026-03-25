@@ -18,14 +18,61 @@ export async function POST(req: NextRequest) {
     if (textInput && textInput.trim().length > 0) {
       notesText = textInput.trim();
     } else if (file) {
-      // For PDF files, extract text using pdf-parse
-      if (file.type === "application/pdf") {
+      const mimeType = file.type;
+
+      if (mimeType === "application/pdf") {
+        // PDF: extract text with pdf-parse
         const buffer = Buffer.from(await file.arrayBuffer());
-        // Dynamic import to avoid issues with pdf-parse in edge runtime
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const pdfParse = require("pdf-parse");
         const pdfData = await pdfParse(buffer);
         notesText = pdfData.text;
+      } else if (mimeType.startsWith("image/")) {
+        // Image: use Gemini vision to OCR/extract text
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const base64 = buffer.toString("base64");
+        const extractResponse = await withRetry(() =>
+          getAI().models.generateContent({
+            model: MODEL,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    inlineData: { mimeType, data: base64 },
+                  },
+                  {
+                    text: "Extract ALL text from this image. If it's a photo of handwritten or printed notes, transcribe everything you can read. Return only the extracted text, nothing else.",
+                  },
+                ],
+              },
+            ],
+          })
+        );
+        notesText = extractResponse.text ?? "";
+      } else if (mimeType.startsWith("audio/")) {
+        // Audio: use Gemini multimodal to transcribe
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const base64 = buffer.toString("base64");
+        const transcribeResponse = await withRetry(() =>
+          getAI().models.generateContent({
+            model: MODEL,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    inlineData: { mimeType, data: base64 },
+                  },
+                  {
+                    text: "Transcribe this audio recording. It contains study notes or a lecture. Return only the transcribed text, nothing else.",
+                  },
+                ],
+              },
+            ],
+          })
+        );
+        notesText = transcribeResponse.text ?? "";
       } else {
         // Plain text file
         notesText = await file.text();

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAI, MODEL, withRetry } from "@/lib/gemini";
-import { MANIFEST_GENERATION_PROMPT } from "@/lib/prompts";
+import { MANIFEST_GENERATION_PROMPT, LEARNER_PROFILE_ADAPTATIONS } from "@/lib/prompts";
 import { lessonManifestSchema } from "@/lib/manifest-schema";
 import type { ContentAnalysis, LessonManifest } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const analysis: ContentAnalysis = await req.json();
+    const body = await req.json();
+    const { learnerProfile, ...analysis } = body as ContentAnalysis & { learnerProfile?: string };
 
     if (!analysis.concepts || analysis.concepts.length === 0) {
       return NextResponse.json(
@@ -15,10 +16,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Build prompt with optional learner profile adaptation
+    let prompt = MANIFEST_GENERATION_PROMPT;
+    if (learnerProfile && LEARNER_PROFILE_ADAPTATIONS[learnerProfile]) {
+      prompt += LEARNER_PROFILE_ADAPTATIONS[learnerProfile] + "\n\n";
+    }
+    prompt += JSON.stringify(analysis, null, 2);
+
     const response = await withRetry(() =>
       getAI().models.generateContent({
         model: MODEL,
-        contents: MANIFEST_GENERATION_PROMPT + JSON.stringify(analysis, null, 2),
+        contents: prompt,
         config: {
           responseMimeType: "application/json",
           responseSchema: lessonManifestSchema,

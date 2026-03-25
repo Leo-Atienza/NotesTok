@@ -42,6 +42,44 @@ The lesson ID should be a kebab-case slug based on the topic (e.g., "bio-101-pho
 CONTENT ANALYSIS:
 `;
 
+export const LEARNER_PROFILE_ADAPTATIONS: Record<string, string> = {
+  "focus-seeker": `
+LEARNER PROFILE: Focus-Seeker (⚡ short attention span, gamified learning)
+ADAPTATION RULES:
+- Make segments SHORTER: 20-30 seconds read time (50-75 words each)
+- Create MORE segments (5-7 instead of 3-5) to keep it bite-sized
+- Add a quiz checkpoint after EVERY concept segment (more quizzes = more engagement)
+- Use gamified, challenge-based tone: "Can you solve this?", "Level up!", "Boss challenge!"
+- Mention XP rewards in the narration to motivate: "Worth 25 XP!"
+- Use punchy, high-energy language with short sentences
+- Each segment should feel like a TikTok — hook in the first sentence
+`,
+  "multi-modal": `
+LEARNER PROFILE: Multi-Modal (🎧 audio learner, commuter-friendly)
+ADAPTATION RULES:
+- Make segments LONGER: 60-90 seconds read time (150-225 words each) for sustained listening
+- Write in a conversational, storytelling tone — like a podcast host explaining
+- Use smooth transitions between topics: "Now here's where it gets interesting..."
+- Avoid visual references like "as shown above" or "look at this" — content must work as pure audio
+- Use vivid verbal descriptions and word pictures instead of visual cues
+- Create a narrative arc across segments — beginning, middle, conclusion
+- Fewer quizzes (only after every 2-3 segments) to not break audio flow
+`,
+  "global-scholar": `
+LEARNER PROFILE: Global Scholar (🌍 ESL student, simplified language)
+ADAPTATION RULES:
+- Use SIMPLE vocabulary (CEFR B1-B2 level, 2750-3750 word families)
+- Keep sentences SHORT (max 15 words per sentence)
+- Use active voice exclusively
+- PRESERVE all technical/exam terms exactly — wrap them in bold context clues
+- Avoid idioms, phrasal verbs, slang, and cultural references
+- Add brief definitions inline: "Photosynthesis (how plants make food from light)"
+- Use concrete, universal examples (not culture-specific)
+- Break complex ideas into simpler sub-steps
+- Segment length: 30-45 seconds read time (75-110 words)
+`,
+};
+
 export const PANIC_REGENERATION_PROMPT = `You are a patient, creative tutor. A student is struggling to understand a concept. They've already failed the quiz question multiple times.
 
 Your job: Explain the SAME concept but in a COMPLETELY DIFFERENT way.
