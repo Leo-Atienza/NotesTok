@@ -311,7 +311,7 @@ export function LessonPlayer({ manifest, onRestart, onSwitchToTabs }: LessonPlay
                 }}
               >
                 <Layers className="w-3 h-3" />
-                Browse
+                <span className="hidden sm:inline">Browse</span>
               </Button>
             )}
             <GlobalScholarToggle

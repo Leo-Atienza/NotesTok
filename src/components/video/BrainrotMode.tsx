@@ -4,13 +4,12 @@ import {
   useCurrentFrame,
   useVideoConfig,
   interpolate,
-  spring,
   Video,
   Audio,
 } from "remotion";
 import { AnimatedCaptions } from "./AnimatedCaptions";
 import { generateSceneData } from "./CaptionEngine";
-import { BRAINROT_DB } from "@/lib/brainrot-database";
+import { getBrainrotTheme } from "@/lib/brainrot-database";
 import type { Segment } from "@/lib/types";
 
 interface BrainrotModeProps {
@@ -27,13 +26,8 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
 
   const scenes = generateSceneData(segment.content, segment.keyTerms, segment.voiceoverTimings);
 
-  // Deterministic background selection
-  const bgIndex = useMemo(() => {
-    let hash = 0;
-    for (let i = 0; i < segment.id.length; i++) hash += segment.id.charCodeAt(i);
-    return hash % BRAINROT_DB.length;
-  }, [segment.id]);
-  const brainrotVideoUrl = BRAINROT_DB[bgIndex];
+  // Deterministic animated background theme
+  const theme = useMemo(() => getBrainrotTheme(segment.id), [segment.id]);
 
   // Current scene
   const currentTimeMs = (frame / fps) * 1000;
@@ -113,7 +107,7 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
         )}
       </div>
 
-      {/* === BOTTOM HALF: Minecraft Parkour / Satisfying Gameplay === */}
+      {/* === BOTTOM HALF: Animated Hypnotic Background === */}
       <div
         style={{
           position: "absolute",
@@ -125,10 +119,47 @@ export const BrainrotMode: React.FC<BrainrotModeProps> = ({
           backgroundColor: "#000",
         }}
       >
-        <Video
-          src={brainrotVideoUrl}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          muted
+        {/* Rotating gradient */}
+        <div
+          style={{
+            position: "absolute",
+            inset: "-50%",
+            background: `conic-gradient(from ${frame * 3}deg, ${theme.colors[0]}, ${theme.colors[1]}, ${theme.colors[2]}, ${theme.colors[0]})`,
+            opacity: 0.8,
+            filter: "blur(40px)",
+          }}
+        />
+        {/* Pulsing orbs */}
+        {[0, 1, 2].map((i) => {
+          const orbX = 20 + i * 30 + Math.sin((frame + i * 40) / 20) * 15;
+          const orbY = 30 + Math.cos((frame + i * 60) / 25) * 20;
+          const orbScale = 0.8 + Math.sin((frame + i * 30) / 15) * 0.3;
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: `${orbX}%`,
+                top: `${orbY}%`,
+                width: 120,
+                height: 120,
+                borderRadius: "50%",
+                background: `radial-gradient(circle, ${theme.colors[i]}, transparent)`,
+                transform: `scale(${orbScale}) translate(-50%, -50%)`,
+                opacity: 0.6,
+                filter: "blur(20px)",
+              }}
+            />
+          );
+        })}
+        {/* Scan lines */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.15) 3px, rgba(0,0,0,0.15) 4px)",
+            pointerEvents: "none",
+          }}
         />
       </div>
 

@@ -77,7 +77,7 @@ export function VideosView({ manifest }: VideosViewProps) {
   return (
     <div className="flex flex-col items-center gap-4">
       {/* Mode selector */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap justify-center">
         <Button
           variant={mode === "brainrot" ? "default" : "outline"}
           size="sm"

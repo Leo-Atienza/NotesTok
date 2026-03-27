@@ -64,18 +64,18 @@ export function LessonTabs({ manifest, onBack, onSwitchToPlayer }: LessonTabsPro
     <div className="min-h-screen bg-background">
       {/* Top bar */}
       <div className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg border-b">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-2xl mx-auto px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Button
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="h-8 w-8"
+              className="h-8 w-8 shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold truncate">{manifest.title}</h1>
+              <h1 className="text-xs sm:text-sm font-semibold truncate">{manifest.title}</h1>
               <p className="text-xs text-muted-foreground">
                 {manifest.segments.length} segments
                 {manifest.learnerProfile && (
@@ -127,9 +127,9 @@ export function LessonTabs({ manifest, onBack, onSwitchToPlayer }: LessonTabsPro
                 <span className="hidden sm:inline">Play</span>
               </button>
             )}
-            <Badge variant="outline" className="text-xs gap-1">
+            <Badge variant="outline" className="text-[10px] sm:text-xs gap-0.5 sm:gap-1 shrink-0">
               <Zap className="w-3 h-3 text-yellow-500" />
-              {manifest.totalXP} XP
+              <span className="hidden sm:inline">{manifest.totalXP}</span> XP
             </Badge>
           </div>
         </div>
