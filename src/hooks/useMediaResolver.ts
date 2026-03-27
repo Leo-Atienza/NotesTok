@@ -38,9 +38,11 @@ export function useMediaResolver(
     skipMediaResolve?: boolean;
     /** Automatically load AI images on mount */
     autoLoadImages?: boolean;
+    /** Video mode — passed to media resolve for mode-specific queries */
+    mode?: "brainrot" | "fireship" | "aistory" | "whiteboard" | "classic";
   } = {}
 ): MediaResolverResult {
-  const { skipMediaResolve = false, autoLoadImages = false } = options;
+  const { skipMediaResolve = false, autoLoadImages = false, mode } = options;
 
   const [enrichedManifest, setEnrichedManifest] = useState<LessonManifest>(manifest);
   const [sceneImages, setSceneImages] = useState<Record<string, string[]>>({});
@@ -78,6 +80,7 @@ export function useMediaResolver(
               type: s.type,
             })),
             subject: manifest.subject,
+            mode: mode && mode !== "classic" ? mode : undefined,
           }),
         });
         const mediaData = await mediaRes.json();

@@ -78,10 +78,10 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
   const displayIndex = activeIndex >= 0 ? activeIndex : words.length - 1;
   const activeWord = words[displayIndex];
 
-  // Group chunks (Karaoke: Show 3 words at a time)
-  // [prevWord, currentWord, nextWord]
-  const currentChunkIndex = Math.floor(displayIndex / 3) * 3;
-  const wordChunk = words.slice(currentChunkIndex, currentChunkIndex + 3);
+  // Group chunks — brainrot shows 3 words for fast reading, others 3
+  const chunkSize = isBrainrot ? 3 : 3;
+  const currentChunkIndex = Math.floor(displayIndex / chunkSize) * chunkSize;
+  const wordChunk = words.slice(currentChunkIndex, currentChunkIndex + chunkSize);
 
   // Scene transitions
   const exitOpacity = interpolate(frame, [durationFrames - 5, durationFrames], [1, 0], {
@@ -91,18 +91,29 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
 
   // Calculate spring bound to the *active word*
   const activeWordLocalFrame = Math.round(((activeWord.startMs - scene.startMs) / 1000) * fps);
-  
-  // AI Story mode has a softer, more cinematic spring
+
+  // Brainrot: aggressive slam spring. AI Story: softer cinematic. Others: fast pop.
   const wordProgress = spring({
     frame: Math.max(0, frame - activeWordLocalFrame),
     fps,
-    config: isAIStory 
-      ? { damping: 15, mass: 0.5, stiffness: 200 } // Softer pop
-      : { damping: 10, mass: 0.2, stiffness: 350 }, // Extremely fast pop
+    config: isBrainrot
+      ? { damping: 8, mass: 0.6, stiffness: 400 }  // Word-slam: heavy impact
+      : isAIStory
+        ? { damping: 15, mass: 0.5, stiffness: 200 } // Softer pop
+        : { damping: 10, mass: 0.2, stiffness: 350 }, // Fast pop
   });
 
-  const jumpY = interpolate(wordProgress, [0, 0.4, 1], [0, isAIStory ? -10 : -25, 0]);
-  const activeScale = interpolate(wordProgress, [0, 0.4, 1], [0.9, isAIStory ? 1.15 : 1.3, 1.1]);
+  // Brainrot: word slams down from above with camera shake
+  const brainrotSlamY = interpolate(wordProgress, [0, 0.3, 0.6, 1], [-60, 5, -3, 0]);
+  const brainrotShakeX = isBrainrot && wordProgress > 0.2 && wordProgress < 0.5
+    ? Math.sin(frame * 8) * 3 : 0;
+
+  const jumpY = isBrainrot
+    ? brainrotSlamY
+    : interpolate(wordProgress, [0, 0.4, 1], [0, isAIStory ? -10 : -25, 0]);
+  const activeScale = isBrainrot
+    ? interpolate(wordProgress, [0, 0.3, 0.6, 1], [1.5, 1.1, 1.05, 1.0])
+    : interpolate(wordProgress, [0, 0.4, 1], [0.9, isAIStory ? 1.15 : 1.3, 1.1]);
 
   return (
     <AbsoluteFill style={{ opacity: exitOpacity }}>
@@ -110,7 +121,7 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
       <div
         style={{
           position: "absolute",
-          top: isBrainrot ? "38%" : "50%",
+          top: isBrainrot ? "35%" : "50%",
           left: 0,
           right: 0,
           display: "flex",
@@ -125,53 +136,61 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
           const isThisWordActive = wt.startMs === activeWord.startMs;
           const isPassedOrActive = timeMs >= wt.startMs;
 
-          // Karaoke color assignment
+          // Color assignment per mode
           let highlightColor = "#FFFFFF";
           if (isBrainrot) {
-            highlightColor = wt.isKeyTerm ? PILL_COLORS[0] : PILL_COLORS[1];
+            highlightColor = "#FFE500"; // ALWAYS bright yellow for active word in brainrot
           } else if (isAIStory) {
-            highlightColor = wt.isKeyTerm ? "#ffcc00" : "#ffea00"; // Cinematic yellow
+            highlightColor = wt.isKeyTerm ? "#ffcc00" : "#ffea00";
           } else if (isWhiteboard) {
-            highlightColor = "#111"; // Black sharpie highlight
+            highlightColor = "#111";
           } else {
-            highlightColor = wt.isKeyTerm ? "#58a6ff" : "#00ff88"; // Fireship
+            highlightColor = wt.isKeyTerm ? "#58a6ff" : "#00ff88";
           }
 
-          const color = isThisWordActive ? highlightColor : isPassedOrActive ? (isWhiteboard ? "#111" : "#FFFFFF") : "rgba(128,128,128,0.4)";
+          const color = isThisWordActive
+            ? highlightColor
+            : isPassedOrActive
+              ? (isWhiteboard ? "#111" : isBrainrot ? "rgba(255,255,255,0.85)" : "#FFFFFF")
+              : "rgba(128,128,128,0.3)";
 
           const scale = isThisWordActive ? activeScale : 1;
           const translateY = isThisWordActive ? jumpY : 0;
-          const rotate = isThisWordActive && isBrainrot ? (i % 2 === 0 ? 3 : -3) : 0;
+          const translateX = isThisWordActive ? brainrotShakeX : 0;
+          const rotate = isThisWordActive && isBrainrot ? (i % 2 === 0 ? 2 : -2) : 0;
 
           return (
             <div
               key={i}
               style={{
-                transform: `scale(${scale}) translateY(${translateY}px) rotate(${rotate}deg)`,
+                transform: `scale(${scale}) translateY(${translateY}px) translateX(${translateX}px) rotate(${rotate}deg)`,
                 color: color,
-                fontSize: isBrainrot ? 80 : isWhiteboard ? 76 : isAIStory ? 72 : 64,
+                fontSize: isBrainrot ? 68 : isWhiteboard ? 76 : isAIStory ? 72 : 64,
                 fontWeight: 900,
-                fontFamily: isAIStory
-                  ? "'Lora', 'Georgia', serif" // Cinematic serif for AI stories
-                  : isWhiteboard
-                    ? "'Caveat', 'Comic Sans MS', cursive, sans-serif"
-                    : isBrainrot
-                      ? "'Montserrat', 'Arial Black', sans-serif"
+                fontFamily: isBrainrot
+                  ? "'Impact', 'Arial Black', sans-serif"
+                  : isAIStory
+                    ? "'Lora', 'Georgia', serif"
+                    : isWhiteboard
+                      ? "'Caveat', 'Comic Sans MS', cursive, sans-serif"
                       : "'Fira Code', 'JetBrains Mono', monospace",
                 textTransform: isBrainrot ? "uppercase" : "none",
                 lineHeight: 1.1,
-                letterSpacing: isBrainrot ? "-0.04em" : "0",
+                letterSpacing: isBrainrot ? "0.02em" : "0",
                 display: "inline-block",
                 transformOrigin: "center center",
-                WebkitTextStroke: isBrainrot ? "6px black" : isAIStory ? "3px rgba(0,0,0,0.8)" : "none",
-                textShadow: isBrainrot 
-                  ? "0px 8px 0px rgba(0,0,0,1), 0px 16px 32px rgba(0,0,0,0.8)"
+                WebkitTextStroke: isBrainrot
+                  ? "4px #000000"
+                  : isAIStory ? "3px rgba(0,0,0,0.8)" : "none",
+                textShadow: isBrainrot
+                  ? "0px 6px 0px rgba(0,0,0,0.9), 0px 12px 24px rgba(0,0,0,0.7)"
                   : isAIStory
                     ? "0px 4px 16px rgba(0,0,0,0.9), 0px 0px 8px rgba(0,0,0,0.8)"
                     : isWhiteboard
                       ? "none"
                       : "0px 4px 12px rgba(0,0,0,0.8)",
-                padding: (isBrainrot || isAIStory || isWhiteboard) ? "4px 8px" : "0",
+                padding: (isBrainrot || isAIStory || isWhiteboard) ? "4px 12px" : "0",
+                transition: isThisWordActive ? "none" : "color 0.1s",
               }}
             >
               {wt.word}

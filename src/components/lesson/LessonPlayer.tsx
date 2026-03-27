@@ -61,6 +61,7 @@ export function LessonPlayer({ manifest, onRestart, onSwitchToTabs }: LessonPlay
     loadingStep: mediaLoadingStep,
   } = useMediaResolver(manifest, {
     skipMediaResolve: !videoMode || videoMode === "classic",
+    mode: videoMode || undefined,
   });
 
   // Start lesson after mode is selected AND media is resolved
