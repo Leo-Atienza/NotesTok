@@ -35,6 +35,10 @@ export interface Segment {
   backgroundPhotoUrl?: string;
   scenePhotoUrls?: string[];
   voiceoverUrl?: string;
+  voiceoverTimings?: { word: string; startMs: number; endMs: number }[];
+  codeSnippet?: { language: string; code: string };
+  scoutedMemeUrl?: string;
+  sfxUrl?: string;
 }
 
 export interface QuizCheckpoint {

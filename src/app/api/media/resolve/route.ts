@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { findOrFetchMedia, findMusic, findSfx, recordUsage } from "@/lib/media-store";
+import { findOrFetchMedia, findMusic, findSfx, recordUsage, findOrFetchGifs } from "@/lib/media-store";
 import type { MediaAssetResult } from "@/lib/media-store";
+import { generateSfx } from "@/lib/elevenlabs";
 
 interface ResolveSegment {
   id: string;
@@ -17,6 +18,8 @@ interface ResolveRequest {
 interface SegmentMediaResult {
   videos: MediaAssetResult[];
   photos: MediaAssetResult[];
+  memeUrl?: string;
+  sfxUrl?: string;
 }
 
 export async function POST(request: Request) {
@@ -30,14 +33,18 @@ export async function POST(request: Request) {
 
     // Resolve media for all segments in parallel
     const mediaPromises = segments.map(async (seg) => {
-      const [videos, photos] = await Promise.allSettled([
+      const [videos, photos, gifs, aiSfx] = await Promise.allSettled([
         findOrFetchMedia(seg.keyTerms, seg.title, seg.type, subject, "video"),
         findOrFetchMedia(seg.keyTerms, seg.title, seg.type, subject, "photo"),
+        findOrFetchGifs(seg.keyTerms[0] || "mind blown", "funny", [subject], 1),
+        generateSfx(`A high quality cinematic ${seg.type === "summary" ? "success ding" : "whoosh transition"} sound effect`),
       ]);
 
       const result: SegmentMediaResult = {
         videos: videos.status === "fulfilled" ? videos.value : [],
         photos: photos.status === "fulfilled" ? photos.value : [],
+        memeUrl: gifs.status === "fulfilled" && gifs.value.length > 0 ? gifs.value[0].url : undefined,
+        sfxUrl: aiSfx.status === "fulfilled" && aiSfx.value ? aiSfx.value : undefined,
       };
 
       // Record usage for DB assets (fire-and-forget)

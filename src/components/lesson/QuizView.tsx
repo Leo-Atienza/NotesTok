@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useRef, useReducer } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,10 +9,13 @@ import {
   XCircle,
   ArrowRight,
   Lightbulb,
-  Trophy,
   Zap,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import type { LessonManifest, QuizCheckpoint } from "@/lib/types";
+import { updateLessonProgress, recordStudySession } from "@/lib/lesson-store";
+import { QuizComplete } from "./QuizComplete";
 
 interface QuizViewProps {
   manifest: LessonManifest;
@@ -24,6 +27,54 @@ interface QuizState {
   attempts: number;
   showHint: boolean;
   showExplanation: boolean;
+  panicExplanation: string | null;
+  panicLoading: boolean;
+  panicError: string | null;
+}
+
+type QuizAction =
+  | { type: "ANSWER_SELECTED"; index: number; isCorrect: boolean }
+  | { type: "PANIC_REQUESTED" }
+  | { type: "PANIC_SUCCESS"; explanation: string }
+  | { type: "PANIC_FAILED"; error: string }
+  | { type: "NEXT_QUESTION" }
+  | { type: "RESET" };
+
+const initialState: QuizState = {
+  selectedAnswer: null,
+  isCorrect: null,
+  attempts: 0,
+  showHint: false,
+  showExplanation: false,
+  panicExplanation: null,
+  panicLoading: false,
+  panicError: null,
+};
+
+function quizReducer(state: QuizState, action: QuizAction): QuizState {
+  switch (action.type) {
+    case "ANSWER_SELECTED":
+      const newAttempts = state.attempts + 1;
+      return {
+        ...state,
+        selectedAnswer: action.index,
+        isCorrect: action.isCorrect,
+        attempts: newAttempts,
+        showHint: !action.isCorrect && newAttempts >= 1,
+        showExplanation: action.isCorrect,
+      };
+    case "PANIC_REQUESTED":
+      return { ...state, panicLoading: true, panicError: null };
+    case "PANIC_SUCCESS":
+      return { ...state, panicLoading: false, panicExplanation: action.explanation };
+    case "PANIC_FAILED":
+      return { ...state, panicLoading: false, panicError: action.error };
+    case "NEXT_QUESTION":
+    case "RESET":
+      return initialState;
+    default:
+      return state;
+  }
 }
 
 export function QuizView({ manifest }: QuizViewProps) {
@@ -31,13 +82,16 @@ export function QuizView({ manifest }: QuizViewProps) {
   const [currentQuiz, setCurrentQuiz] = useState(0);
   const [totalXP, setTotalXP] = useState(0);
   const [completed, setCompleted] = useState(false);
-  const [quizState, setQuizState] = useState<QuizState>({
-    selectedAnswer: null,
-    isCorrect: null,
-    attempts: 0,
-    showHint: false,
-    showExplanation: false,
-  });
+  const [state, dispatch] = useReducer(quizReducer, initialState);
+  const sessionRecorded = useRef(false);
+
+  // Record study session on first interaction
+  useEffect(() => {
+    if (!sessionRecorded.current) {
+      sessionRecorded.current = true;
+      recordStudySession();
+    }
+  }, []);
 
   if (quizSegments.length === 0) {
     return (
@@ -51,72 +105,69 @@ export function QuizView({ manifest }: QuizViewProps) {
   const quiz = segment.quiz!;
 
   const handleAnswer = (index: number) => {
-    if (quizState.isCorrect) return;
+    if (state.isCorrect) return;
 
-    const correct = index === quiz.correctIndex;
-    const newAttempts = quizState.attempts + 1;
+    const isCorrect = index === quiz.correctIndex;
+    dispatch({ type: "ANSWER_SELECTED", index, isCorrect });
 
-    setQuizState({
-      selectedAnswer: index,
-      isCorrect: correct,
-      attempts: newAttempts,
-      showHint: !correct && newAttempts >= 1,
-      showExplanation: correct,
-    });
-
-    if (correct) {
+    if (isCorrect) {
       const xp = Math.max(
-        Math.round((quiz.xpReward || 15) / newAttempts),
+        Math.round((quiz.xpReward || 15) / (state.attempts + 1)),
         5
       );
       setTotalXP((prev) => prev + xp);
+      updateLessonProgress(manifest.id, segment.id, true, xp);
+    }
+  };
+
+  const handlePanic = async () => {
+    if (state.panicLoading || state.panicExplanation) return;
+    dispatch({ type: "PANIC_REQUESTED" });
+    try {
+      const res = await fetch("/api/panic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          original: segment.content,
+          concept: segment.title,
+        }),
+      });
+      if (!res.ok) throw new Error("API failed");
+      const data = await res.json();
+      if (data.simplerExplanation) {
+        dispatch({ type: "PANIC_SUCCESS", explanation: data.simplerExplanation });
+      } else {
+        throw new Error("No explanation returned");
+      }
+    } catch (e) {
+      dispatch({ type: "PANIC_FAILED", error: "Failed to simplify. Please try again." });
     }
   };
 
   const handleNext = () => {
     if (currentQuiz < quizSegments.length - 1) {
       setCurrentQuiz((prev) => prev + 1);
-      setQuizState({
-        selectedAnswer: null,
-        isCorrect: null,
-        attempts: 0,
-        showHint: false,
-        showExplanation: false,
-      });
+      dispatch({ type: "NEXT_QUESTION" });
     } else {
       setCompleted(true);
     }
   };
 
+  const handleReviewAgain = () => {
+    setCurrentQuiz(0);
+    setTotalXP(0);
+    setCompleted(false);
+    dispatch({ type: "RESET" });
+  };
+
   if (completed) {
     return (
-      <div className="flex flex-col items-center gap-4 py-8">
-        <div className="w-16 h-16 rounded-full bg-yellow-500/20 flex items-center justify-center">
-          <Trophy className="w-8 h-8 text-yellow-500" />
-        </div>
-        <h3 className="text-xl font-bold">All Quizzes Complete!</h3>
-        <div className="flex items-center gap-2 text-yellow-500 font-bold text-lg">
-          <Zap className="w-5 h-5" />
-          {totalXP} XP earned
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setCurrentQuiz(0);
-            setTotalXP(0);
-            setCompleted(false);
-            setQuizState({
-              selectedAnswer: null,
-              isCorrect: null,
-              attempts: 0,
-              showHint: false,
-              showExplanation: false,
-            });
-          }}
-        >
-          Try Again
-        </Button>
-      </div>
+      <QuizComplete
+        totalXP={totalXP}
+        segmentsCount={quizSegments.length}
+        subject={manifest.subject}
+        onReviewAgain={handleReviewAgain}
+      />
     );
   }
 
@@ -145,16 +196,16 @@ export function QuizView({ manifest }: QuizViewProps) {
 
         <div className="space-y-2.5">
           {quiz.options.map((option, i) => {
-            const isSelected = quizState.selectedAnswer === i;
+            const isSelected = state.selectedAnswer === i;
             const isCorrectOption = i === quiz.correctIndex;
-            const showCorrect = quizState.isCorrect && isCorrectOption;
-            const showWrong = isSelected && !quizState.isCorrect && quizState.selectedAnswer !== null;
+            const showCorrect = state.isCorrect && isCorrectOption;
+            const showWrong = isSelected && !state.isCorrect && state.selectedAnswer !== null;
 
             return (
               <button
                 key={i}
                 onClick={() => handleAnswer(i)}
-                disabled={quizState.isCorrect === true}
+                disabled={state.isCorrect === true}
                 className={`w-full text-left p-3.5 rounded-xl border-2 transition-all flex items-center gap-3 ${
                   showCorrect
                     ? "border-green-500 bg-green-500/10 text-green-700 dark:text-green-400"
@@ -175,7 +226,7 @@ export function QuizView({ manifest }: QuizViewProps) {
         </div>
 
         {/* Hint */}
-        {quizState.showHint && !quizState.isCorrect && (
+        {state.showHint && !state.isCorrect && (
           <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <div className="flex items-center gap-2 text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-1">
               <Lightbulb className="w-4 h-4" />
@@ -185,8 +236,43 @@ export function QuizView({ manifest }: QuizViewProps) {
           </div>
         )}
 
+        {/* Panic: simpler explanation (after 2+ wrong attempts) */}
+        {state.attempts >= 2 && !state.isCorrect && (
+          <div className="mt-3">
+            {state.panicExplanation ? (
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                <div className="flex items-center gap-2 text-sm font-medium text-orange-600 dark:text-orange-400 mb-1">
+                  <AlertCircle className="w-4 h-4" />
+                  Simpler Explanation
+                </div>
+                <p className="text-sm text-muted-foreground">{state.panicExplanation}</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePanic}
+                  disabled={state.panicLoading}
+                  className="text-orange-600 hover:text-orange-700 hover:bg-orange-500/10 self-start"
+                >
+                  {state.panicLoading ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <Lightbulb className="w-4 h-4 mr-1" />
+                  )}
+                  {state.panicLoading ? "Simplifying..." : "Explain It Simpler"}
+                </Button>
+                {state.panicError && (
+                  <p className="text-xs text-red-500 ml-2 animate-in fade-in">{state.panicError}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Explanation */}
-        {quizState.showExplanation && (
+        {state.showExplanation && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
             <p className="text-sm text-foreground/80">{quiz.explanation}</p>
           </div>
@@ -194,7 +280,7 @@ export function QuizView({ manifest }: QuizViewProps) {
       </Card>
 
       {/* Continue button */}
-      {quizState.isCorrect && (
+      {state.isCorrect && (
         <Button onClick={handleNext} className="gap-2">
           {currentQuiz < quizSegments.length - 1 ? "Next Question" : "Finish"}
           <ArrowRight className="w-4 h-4" />

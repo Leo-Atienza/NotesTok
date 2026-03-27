@@ -80,6 +80,14 @@ export const lessonManifestSchema = {
             description:
               "Array of 3-6 vivid image generation prompts, one per sentence in the content. Each describes a different dramatic, cinematic illustrated scene matching that sentence. Think animated storytelling — characters, objects, dramatic lighting, deep shadows. NOT generic educational diagrams. Each scene should feel like a frame from an animated short film. Describe specific characters, actions, environments, camera angles. No text in images.",
           },
+          codeSnippet: {
+            type: "object" as Type,
+            properties: {
+              language: { type: "string" as Type, description: "e.g. 'javascript', 'python', 'bash'" },
+              code: { type: "string" as Type, description: "Max 5-6 lines of code illustrating the segment concept." },
+            },
+            required: ["language", "code"],
+          },
           quiz: {
             type: "object" as Type,
             properties: {

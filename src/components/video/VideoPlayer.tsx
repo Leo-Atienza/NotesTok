@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, Component } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import {
   LessonVideoComposition,
@@ -10,12 +10,70 @@ import { getSegmentDurationInFrames } from "./CaptionEngine";
 import type { Segment } from "@/lib/types";
 import type { ResolvedSegmentResources } from "@/lib/media-types";
 
+// Error boundary to catch Remotion rendering crashes
+class VideoErrorBoundary extends Component<
+  { children: React.ReactNode; onRetry: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; onRetry: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            width: "100%",
+            aspectRatio: "9 / 16",
+            borderRadius: 16,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+            color: "#fff",
+          }}
+        >
+          <span style={{ fontSize: 48 }}>🎬</span>
+          <p style={{ fontSize: 14, opacity: 0.8 }}>Video failed to render</p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false });
+              this.props.onRetry();
+            }}
+            style={{
+              padding: "8px 20px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(255,255,255,0.1)",
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Remotion Player expects a loosely-typed component for its `component` prop
 const CompositionComponent = LessonVideoComposition as unknown as React.FC<Record<string, unknown>>;
 
 interface VideoPlayerProps {
   segment: Segment;
-  mode: "brainrot" | "fireship";
+  mode: "brainrot" | "fireship" | "aistory" | "whiteboard";
   onComplete: () => void;
   isPaused?: boolean;
   sceneImages?: string[];
@@ -97,6 +155,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       clearTimeout(timer);
       audio.pause();
       audio.removeAttribute("src");
+      audio.load(); // Force browser to release media decoder
       voiceoverRef.current = null;
     };
   }, [voiceoverUrl, onComplete]);
@@ -114,6 +173,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       audio.pause();
       audio.removeAttribute("src");
+      audio.load(); // Force browser to release media decoder
       musicRef.current = null;
     };
   }, [backgroundMusicUrl, voiceoverUrl]);
@@ -144,32 +204,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         alignItems: "center",
       }}
     >
-      <div
-        className="video-player-container"
-        style={{
-          width: "100%",
-          aspectRatio: "9 / 16",
-          borderRadius: 16,
-          overflow: "hidden",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-        }}
-      >
-        <Player
-          ref={playerRef}
-          component={CompositionComponent}
-          inputProps={inputProps}
-          durationInFrames={durationInFrames}
-          fps={FPS}
-          compositionWidth={WIDTH}
-          compositionHeight={HEIGHT}
-          autoPlay
-          controls
+      <VideoErrorBoundary onRetry={() => playerRef.current?.play()}>
+        <div
+          className="video-player-container"
           style={{
             width: "100%",
-            height: "100%",
+            aspectRatio: "9 / 16",
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
           }}
-        />
-      </div>
+        >
+          <Player
+            ref={playerRef}
+            component={CompositionComponent}
+            inputProps={inputProps}
+            durationInFrames={durationInFrames}
+            fps={FPS}
+            compositionWidth={WIDTH}
+            compositionHeight={HEIGHT}
+            autoPlay
+            controls
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
+        </div>
+      </VideoErrorBoundary>
     </div>
   );
 };

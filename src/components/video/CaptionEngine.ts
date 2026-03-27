@@ -9,15 +9,20 @@ export interface WordTiming {
   isKeyTerm: boolean;
 }
 
+export interface VoiceoverTiming {
+  word: string;
+  startMs: number;
+  endMs: number;
+}
+
 export interface Scene {
   sceneIndex: number;
   sentence: string;
-  keyWords: string[];
   startMs: number;
   endMs: number;
-  wordTimings: { word: string; startMs: number; endMs: number }[];
-  /** All significant words timed sequentially — used by one-word-at-a-time captions */
   allWordTimings: WordTiming[];
+  povText?: string;
+  memeText?: { top?: string; bottom?: string };
 }
 
 // Words to skip when extracting key words for big overlay text
@@ -142,40 +147,80 @@ function splitIntoSentences(content: string): string[] {
 
 export function generateSceneData(
   content: string,
-  wordsPerSecond = 3.2,
-  keyTerms: string[] = []
+  keyTerms: string[] = [],
+  voiceoverTimings?: VoiceoverTiming[]
 ): Scene[] {
+  if (!voiceoverTimings || voiceoverTimings.length === 0) {
+    // Fallback if no timings provided (e.g. failed ElevenLabs)
+    return generateFallbackSceneData(content, keyTerms);
+  }
+
   const sentences = splitIntoSentences(content);
   if (sentences.length === 0) return [];
 
   const scenes: Scene[] = [];
-  let currentMs = 200; // lead-in pause
+  const keyTermSet = new Set(keyTerms.map((t) => t.toLowerCase()));
+
+  let timingIndex = 0;
+  
+  for (let idx = 0; idx < sentences.length; idx++) {
+    const sentence = sentences[idx];
+    const sentenceWords = sentence.split(/\s+/).filter(Boolean);
+    
+    const sceneTimings: WordTiming[] = [];
+    
+    for (let wIdx = 0; wIdx < sentenceWords.length; wIdx++) {
+      if (timingIndex >= voiceoverTimings.length) break;
+      
+      const rawTiming = voiceoverTimings[timingIndex];
+      const cleaned = cleanWord(rawTiming.word);
+      
+      const isKey = keyTermSet.has(cleaned.toLowerCase()) ||
+        keyTerms.some((t) => t.toLowerCase().includes(cleaned.toLowerCase()) && cleaned.length >= 4);
+
+      sceneTimings.push({
+        word: rawTiming.word, // Keep original casing/punctuation for display
+        startMs: rawTiming.startMs,
+        endMs: rawTiming.endMs,
+        isKeyTerm: isKey,
+      });
+      timingIndex++;
+    }
+
+    if (sceneTimings.length > 0) {
+      scenes.push({
+        sceneIndex: idx,
+        sentence,
+        startMs: sceneTimings[0].startMs,
+        endMs: sceneTimings[sceneTimings.length - 1].endMs + 300, // hold on screen a bit
+        allWordTimings: sceneTimings,
+      });
+    }
+  }
+
+  return scenes;
+}
+
+function generateFallbackSceneData(content: string, keyTerms: string[] = []): Scene[] {
+  const sentences = splitIntoSentences(content);
+  if (sentences.length === 0) return [];
+
+  const scenes: Scene[] = [];
+  let currentMs = 200; 
 
   for (let idx = 0; idx < sentences.length; idx++) {
     const sentence = sentences[idx];
     const words = sentence.split(/\s+/).filter(Boolean);
-    const durationMs = (words.length / wordsPerSecond) * 1000;
+    const durationMs = (words.length / 3.2) * 1000;
     const startMs = currentMs;
     const endMs = currentMs + durationMs;
 
-    const keyWords = extractKeyWords(sentence, 4, keyTerms);
-
-    // Legacy keyword timings (backward compat)
-    const kwDuration = durationMs / Math.max(keyWords.length, 1);
-    const wordTimings = keyWords.map((word, i) => ({
-      word,
-      startMs: Math.round(startMs + i * kwDuration),
-      endMs: Math.round(startMs + (i + 1) * kwDuration),
-    }));
-
-    // New: ALL significant words for one-word-at-a-time display
     const significantWords = extractAllSignificantWords(sentence, keyTerms);
-    // Front-loaded: words fill first 70% of scene, last 30% holds
     const activeWindow = durationMs * 0.7;
     const msPerWord = significantWords.length > 0
       ? Math.min(activeWindow / significantWords.length, 500)
       : 400;
-    const clampedMs = Math.max(msPerWord, 300); // 300-500ms per word
+    const clampedMs = Math.max(msPerWord, 300);
 
     const allWordTimings: WordTiming[] = significantWords.map((sw, i) => ({
       word: sw.word,
@@ -187,10 +232,8 @@ export function generateSceneData(
     scenes.push({
       sceneIndex: idx,
       sentence,
-      keyWords,
       startMs: Math.round(startMs),
       endMs: Math.round(endMs),
-      wordTimings,
       allWordTimings,
     });
 

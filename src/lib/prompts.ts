@@ -37,6 +37,8 @@ Given the content analysis below, generate a lesson manifest with these rules:
    - imagePrompt: One main image for the segment (fallback). Dark, moody, cinematic illustration.
    - sceneImagePrompts: An array of 3-6 prompts, one per sentence in the content. Each describes a DIFFERENT dramatic, cinematic illustrated scene matching what that sentence says. Think animated storytelling like TikTok — characters in action, objects, dramatic lighting, deep shadows, vivid colors. NOT generic educational diagrams or stock photos. Each scene should feel like a frame from an animated short film. Describe specific characters, actions, environments, camera angles. NEVER include text or words in images.
 
+14. For EVERY segment, generate a \`codeSnippet\`. Even if the topic is non-technical (like History), write a clever pseudo-code or Python script that jokingly illustrates the concept (e.g., \`def start_revolution():\`). Maximum 5-6 lines.
+
 The lesson ID should be a kebab-case slug based on the topic (e.g., "bio-101-photosynthesis").
 
 CONTENT ANALYSIS:

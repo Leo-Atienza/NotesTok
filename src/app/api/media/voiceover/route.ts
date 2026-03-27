@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ voiceovers: {} });
     }
 
-    const voiceovers: Record<string, string | null> = {};
+    const voiceovers: Record<string, any> = {};
 
     // Process sequentially to respect ElevenLabs rate limits
     for (const seg of segments) {
@@ -40,9 +40,9 @@ export async function POST(request: Request) {
       // 2. Generate fresh
       const result = await generateVoiceover(seg.content);
       if (result) {
-        voiceovers[seg.id] = result.audioUrl;
+        voiceovers[seg.id] = result;
         // 3. Cache (fire-and-forget)
-        cacheVoiceover(seg.content, DEFAULT_VOICE_ID, result.audioUrl, result.durationMs).catch(() => {});
+        cacheVoiceover(seg.content, DEFAULT_VOICE_ID, result.audioUrl, result.durationMs, result.wordTimings).catch(() => {});
       } else {
         voiceovers[seg.id] = null;
       }

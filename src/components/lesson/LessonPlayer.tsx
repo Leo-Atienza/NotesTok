@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLessonPlayer } from "@/hooks/useLessonPlayer";
+import { useMediaResolver } from "@/hooks/useMediaResolver";
 import { StopAndSolve } from "@/components/quiz/StopAndSolve";
+import { ModePicker } from "@/components/lesson/ModePicker";
+import { CompletionScreen } from "@/components/lesson/CompletionScreen";
 import { XPCounter } from "@/components/gamification/XPCounter";
 import { XPPopup } from "@/components/gamification/XPPopup";
 import { GlobalScholarToggle } from "@/components/scholar/GlobalScholarToggle";
@@ -16,18 +19,12 @@ import {
   VolumeX,
   Lightbulb,
   Loader2,
-  Trophy,
   ArrowRight,
   ArrowLeft,
   RotateCcw,
-  Share2,
-  CheckCircle2,
-  Zap,
-  Clock,
   SkipForward,
-  Home,
-  Brain,
-  FileText,
+  Zap,
+  Layers,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
 import { speak, cancelSpeech, pauseSpeech, resumeSpeech } from "@/lib/tts";
@@ -36,11 +33,12 @@ import type { LessonManifest } from "@/lib/types";
 interface LessonPlayerProps {
   manifest: LessonManifest;
   onRestart: () => void;
+  onSwitchToTabs?: () => void;
 }
 
-type VideoMode = "classic" | "brainrot" | "fireship";
+type VideoMode = "classic" | "brainrot" | "fireship" | "aistory" | "whiteboard";
 
-export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
+export function LessonPlayer({ manifest, onRestart, onSwitchToTabs }: LessonPlayerProps) {
   const player = useLessonPlayer();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -50,18 +48,20 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     Record<string, string>
   >({});
   const [scholarFailed, setScholarFailed] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [scholarLoading, setScholarLoading] = useState(false);
   const [videoMode, setVideoMode] = useState<VideoMode | null>(null);
-  const [segmentImages, setSegmentImages] = useState<Record<string, string>>({});
-  // Per-scene images: segmentId → array of image URLs
-  const [sceneImages, setSceneImages] = useState<Record<string, string[]>>({});
-  const [imagesLoading, setImagesLoading] = useState(false);
-  const [mediaLoading, setMediaLoading] = useState(false);
-  const [mediaLoadingStep, setMediaLoadingStep] = useState("");
-  const [enrichedManifest, setEnrichedManifest] = useState<LessonManifest>(manifest);
   const prevXpRef = useRef(0);
   const hasStartedRef = useRef(false);
+
+  // Shared media pipeline (replaces ~130 lines of inline code)
+  const {
+    enrichedManifest,
+    sceneImages,
+    mediaLoading,
+    loadingStep: mediaLoadingStep,
+  } = useMediaResolver(manifest, {
+    skipMediaResolve: !videoMode || videoMode === "classic",
+  });
 
   // Start lesson after mode is selected AND media is resolved
   useEffect(() => {
@@ -72,126 +72,7 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enrichedManifest, videoMode, mediaLoading]);
 
-  // Resolve media + voiceover when a video mode is selected
-  useEffect(() => {
-    if (!videoMode || videoMode === "classic") return;
-    if (hasStartedRef.current) return;
-
-    setMediaLoading(true);
-
-    (async () => {
-      const updated = { ...manifest, segments: manifest.segments.map((s) => ({ ...s })) };
-
-      // Phase 1: Resolve stock media (videos/photos from Pexels/DB)
-      setMediaLoadingStep("Finding visual materials...");
-      try {
-        const mediaRes = await fetch("/api/media/resolve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            segments: manifest.segments.map((s) => ({
-              id: s.id,
-              keyTerms: s.keyTerms,
-              title: s.title,
-              type: s.type,
-            })),
-            subject: manifest.subject,
-          }),
-        });
-        const mediaData = await mediaRes.json();
-
-        // Attach media to segments
-        if (mediaData.segmentMedia) {
-          for (const seg of updated.segments) {
-            const media = mediaData.segmentMedia[seg.id];
-            if (!media) continue;
-            if (media.videos?.[0]?.url) seg.backgroundVideoUrl = media.videos[0].url;
-            if (media.photos?.[0]?.url) seg.backgroundPhotoUrl = media.photos[0].url;
-            if (media.photos?.length > 1) {
-              seg.scenePhotoUrls = media.photos.map((p: { url: string }) => p.url);
-            }
-          }
-          if (mediaData.music) updated.backgroundMusicUrl = mediaData.music;
-          if (mediaData.sfx) updated.transitionSfxUrl = mediaData.sfx;
-        }
-      } catch {
-        // Graceful — continue without stock media
-      }
-
-      // Phase 2: Generate voiceover (parallel with Gemini images)
-      setMediaLoadingStep("Generating voiceover...");
-      const [voiceoverResult] = await Promise.allSettled([
-        fetch("/api/media/voiceover", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            segments: manifest.segments.map((s) => ({ id: s.id, content: s.content })),
-          }),
-        }).then((r) => r.json()),
-      ]);
-
-      if (voiceoverResult.status === "fulfilled" && voiceoverResult.value.voiceovers) {
-        for (const seg of updated.segments) {
-          const voUrl = voiceoverResult.value.voiceovers[seg.id];
-          if (voUrl) seg.voiceoverUrl = voUrl;
-        }
-      }
-
-      // Phase 3: Also generate Gemini images as fallback (existing behavior)
-      setMediaLoadingStep("Preparing visuals...");
-      for (const segment of updated.segments) {
-        // Skip if we already have stock media
-        if (segment.backgroundVideoUrl || segment.backgroundPhotoUrl) continue;
-
-        const prompts = segment.sceneImagePrompts;
-        if (prompts && prompts.length > 0) {
-          const batchSize = 3;
-          for (let i = 0; i < prompts.length; i += batchSize) {
-            const batch = prompts.slice(i, i + batchSize);
-            const results = await Promise.allSettled(
-              batch.map((prompt) =>
-                fetch("/api/generate-image", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ prompt }),
-                }).then((r) => r.json())
-              )
-            );
-            const newUrls: string[] = [];
-            for (const result of results) {
-              if (result.status === "fulfilled" && result.value.imageUrl) {
-                newUrls.push(result.value.imageUrl);
-              }
-            }
-            if (newUrls.length > 0) {
-              setSceneImages((prev) => ({
-                ...prev,
-                [segment.id]: [...(prev[segment.id] || []), ...newUrls],
-              }));
-            }
-          }
-          await new Promise((r) => setTimeout(r, 800));
-        } else if (segment.imagePrompt) {
-          try {
-            const res = await fetch("/api/generate-image", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: segment.imagePrompt }),
-            });
-            const data = await res.json();
-            if (data.imageUrl) {
-              setSegmentImages((prev) => ({ ...prev, [segment.id]: data.imageUrl }));
-            }
-          } catch { /* Graceful fallback */ }
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      }
-
-      setEnrichedManifest(updated);
-      setMediaLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoMode]);
+  // (Media pipeline now handled by useMediaResolver hook above)
 
   // Handle TTS narration (skip when ElevenLabs voiceover is active)
   useEffect(() => {
@@ -321,94 +202,19 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
     onRestart();
   };
 
-  const handleShareResults = () => {
-    const text = `I just completed "${manifest.title}" on NotesTok and earned ${player.xp} XP across ${player.totalSegments} segments! Built with AI-powered active recall.`;
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
   // Handle video segment completion (for brainrot/fireship modes)
   const handleVideoSegmentComplete = () => {
-    // If there's a quiz, the hook handles it via onNarrationEnd
     player.onNarrationEnd();
   };
 
   // Mode picker screen
   if (!videoMode) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background to-muted">
-        <div className="text-center space-y-8 max-w-lg animate-fade-in">
-          <div>
-            <h2 className="text-2xl font-bold mb-2">Choose Your Style</h2>
-            <p className="text-muted-foreground text-sm">
-              How do you want to learn &ldquo;{manifest.title}&rdquo;?
-            </p>
-          </div>
-
-          <div className="grid gap-3">
-            {/* Brainrot mode */}
-            <button
-              onClick={() => setVideoMode("brainrot")}
-              className="group relative flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all text-left"
-            >
-              <div className="w-12 h-12 rounded-lg bg-yellow-500/10 flex items-center justify-center shrink-0">
-                <Brain className="w-6 h-6 text-yellow-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-base">Brainrot Mode</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  TikTok-style video with animated captions &amp; visuals
-                </p>
-              </div>
-              <Badge className="absolute top-2 right-2 bg-yellow-500/10 text-yellow-600 border-yellow-500/20 text-[10px]">
-                NEW
-              </Badge>
-            </button>
-
-            {/* Fireship mode */}
-            <button
-              onClick={() => setVideoMode("fireship")}
-              className="group relative flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-left"
-            >
-              <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                <Zap className="w-6 h-6 text-blue-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-base">Fireship Mode</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Fast-paced explainer with typewriter code style
-                </p>
-              </div>
-              <Badge className="absolute top-2 right-2 bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px]">
-                NEW
-              </Badge>
-            </button>
-
-            {/* Classic mode */}
-            <button
-              onClick={() => setVideoMode("classic")}
-              className="group flex items-center gap-4 p-4 rounded-xl border-2 border-transparent bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left"
-            >
-              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <FileText className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-base">Classic Mode</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Text cards with narration &amp; interactive quizzes
-                </p>
-              </div>
-            </button>
-          </div>
-
-          <Button variant="ghost" size="sm" onClick={handleExit} className="text-muted-foreground">
-            <ArrowLeft className="w-3 h-3 mr-1" />
-            Back
-          </Button>
-        </div>
-      </div>
+      <ModePicker
+        title={manifest.title}
+        onSelect={(mode) => setVideoMode(mode)}
+        onBack={handleExit}
+      />
     );
   }
 
@@ -450,70 +256,16 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
 
   // Completion screen
   if (player.playerState === "completed") {
-    const personaCallout = player.usedScholarMode
-      ? "Global Scholar mode simplified content for your learning style"
-      : player.usedPanicButton
-        ? "The AI adapted explanations to match your understanding"
-        : "Your brain just leveled up through active recall";
-
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background to-muted">
-        <div className="text-center space-y-8 max-w-md animate-fade-in">
-          {/* Trophy */}
-          <div className="w-20 h-20 mx-auto bg-yellow-400/20 rounded-full flex items-center justify-center animate-celebrate animate-pulse-glow">
-            <Trophy className="w-10 h-10 text-yellow-500" />
-          </div>
-
-          <h2 className="text-3xl font-bold">Lesson Complete!</h2>
-
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 rounded-xl bg-card border text-center">
-              <CheckCircle2 className="w-5 h-5 mx-auto mb-1 text-green-500" />
-              <p className="text-lg font-bold">{player.totalSegments}</p>
-              <p className="text-xs text-muted-foreground">Segments</p>
-            </div>
-            <div className="p-3 rounded-xl bg-card border text-center">
-              <Zap className="w-5 h-5 mx-auto mb-1 text-yellow-500" />
-              <p className="text-lg font-bold">{player.xp}</p>
-              <p className="text-xs text-muted-foreground">XP Earned</p>
-            </div>
-            <div className="p-3 rounded-xl bg-card border text-center">
-              <Clock className="w-5 h-5 mx-auto mb-1 text-blue-500" />
-              <p className="text-lg font-bold">
-                ~{manifest.estimatedMinutes}
-              </p>
-              <p className="text-xs text-muted-foreground">Minutes</p>
-            </div>
-          </div>
-
-          {/* Persona callout */}
-          <div className="p-3 rounded-lg bg-primary/5 border border-primary/10">
-            <p className="text-sm text-muted-foreground">{personaCallout}</p>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3 justify-center">
-            <Button variant="outline" onClick={handleExit}>
-              <Home className="w-4 h-4 mr-2" />
-              New Lesson
-            </Button>
-            <Button onClick={handleShareResults}>
-              {copied ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Share Results
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <CompletionScreen
+        title={manifest.title}
+        totalSegments={player.totalSegments}
+        xp={player.xp}
+        estimatedMinutes={manifest.estimatedMinutes}
+        usedScholarMode={player.usedScholarMode}
+        usedPanicButton={player.usedPanicButton}
+        onExit={handleExit}
+      />
     );
   }
 
@@ -548,6 +300,20 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
             </span>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {onSwitchToTabs && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 text-muted-foreground"
+                onClick={() => {
+                  cancelSpeech();
+                  onSwitchToTabs();
+                }}
+              >
+                <Layers className="w-3 h-3" />
+                Browse
+              </Button>
+            )}
             <GlobalScholarToggle
               enabled={player.isScholarMode}
               onToggle={player.toggleScholar}
@@ -565,11 +331,8 @@ export function LessonPlayer({ manifest, onRestart }: LessonPlayerProps) {
         /* Video mode: Brainrot or Fireship — full-width on mobile */
         <div key={player.currentSegmentIndex} className="px-0 sm:px-2 py-2 sm:py-4 max-w-lg mx-auto animate-segment-enter">
           <VideoPlayer
-            segment={{
-              ...player.currentSegment,
-              imageUrl: segmentImages[player.currentSegment.id] || undefined,
-            }}
-            mode={videoMode as "brainrot" | "fireship"}
+            segment={player.currentSegment}
+            mode={videoMode as "brainrot" | "fireship" | "aistory" | "whiteboard"}
             onComplete={handleVideoSegmentComplete}
             isPaused={
               player.playerState === "quiz-active" ||

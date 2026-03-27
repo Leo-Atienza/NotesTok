@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,25 +39,55 @@ export function StopAndSolve({
   const [animatingWrong, setAnimatingWrong] = useState(false);
   const [lastWrongIndex, setLastWrongIndex] = useState<number | null>(null);
   const [isPanicking, setIsPanicking] = useState(false);
+  const [wrongAnswers, setWrongAnswers] = useState<Set<number>>(new Set());
   const isCorrect = selectedAnswer === quiz.correctIndex;
   const isAnswered = selectedAnswer !== null && isCorrect;
 
-  const handleAnswer = (index: number) => {
+  const handleAnswer = useCallback((index: number) => {
     if (isAnswered) return;
+    if (wrongAnswers.has(index)) return; // Already tried this one
 
     if (index !== quiz.correctIndex) {
       setAnimatingWrong(true);
       setLastWrongIndex(index);
+      setWrongAnswers((prev) => new Set(prev).add(index));
       setTimeout(() => setAnimatingWrong(false), 600);
     }
     onAnswer(index);
-  };
+  }, [isAnswered, wrongAnswers, quiz.correctIndex, onAnswer]);
+
+  // Keyboard shortcuts: A/B/C/D to answer, Enter to continue
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isAnswered) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onContinue();
+        }
+        return;
+      }
+
+      const keyMap: Record<string, number> = { a: 0, b: 1, c: 2, d: 3 };
+      const index = keyMap[e.key.toLowerCase()];
+      if (index !== undefined && index < quiz.options.length) {
+        e.preventDefault();
+        handleAnswer(index);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAnswered, handleAnswer, onContinue, quiz.options.length]);
 
   const handlePanic = () => {
     setIsPanicking(true);
     onPanic();
-    // isPanicking will remain true — the panic explanation will show inline
   };
+
+  // Reset isPanicking when we receive the explanation
+  useEffect(() => {
+    if (panicExplanation) setIsPanicking(false);
+  }, [panicExplanation]);
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -99,6 +129,7 @@ export function StopAndSolve({
           {quiz.options.map((option, index) => {
             let variant: "outline" | "default" | "destructive" = "outline";
             let className = "w-full justify-start text-left h-auto py-3 px-4";
+            const wasWrong = wrongAnswers.has(index);
 
             if (isAnswered) {
               if (index === quiz.correctIndex) {
@@ -111,15 +142,10 @@ export function StopAndSolve({
               animatingWrong &&
               lastWrongIndex === index
             ) {
-              // Use local animatingWrong state as source of truth for shake
               className += " animate-shake border-red-400";
-            } else if (
-              !animatingWrong &&
-              selectedAnswer === index &&
-              selectedAnswer !== quiz.correctIndex
-            ) {
-              // Show red border on previous wrong answer (no shake)
-              className += " border-red-300";
+            } else if (wasWrong) {
+              // Disable previously-wrong answers
+              className += " opacity-40 border-red-300 cursor-not-allowed";
             }
 
             return (
@@ -128,7 +154,7 @@ export function StopAndSolve({
                 variant={variant}
                 className={className}
                 onClick={() => handleAnswer(index)}
-                disabled={isAnswered}
+                disabled={isAnswered || wasWrong}
               >
                 <span className="mr-3 font-mono text-sm opacity-60">
                   {String.fromCharCode(65 + index)}

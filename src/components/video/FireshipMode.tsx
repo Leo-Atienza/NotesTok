@@ -1,67 +1,40 @@
 import React from "react";
 import {
   AbsoluteFill,
-  OffthreadVideo,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
   spring,
+  Video,
+  Audio,
 } from "remotion";
 import { AnimatedCaptions } from "./AnimatedCaptions";
 import { generateSceneData } from "./CaptionEngine";
-import {
-  CharacterLayer,
-  GifOverlay,
-  LottieLayer,
-  StickerBurst,
-  MemeTextOverlay,
-  POVOverlay,
-} from "./layers";
 import type { Segment } from "@/lib/types";
-import type { ResolvedSegmentResources } from "@/lib/media-types";
 
 interface FireshipModeProps {
   segment: Segment;
   sceneImages?: string[];
-  backgroundVideoUrl?: string;
-  backgroundPhotoUrl?: string;
-  scenePhotoUrls?: string[];
-  cauldronResources?: ResolvedSegmentResources;
 }
 
-// Code lines for atmospheric background
-const CODE_LINES = [
+const FALLBACK_CODE = [
   "import { Revolution } from './history';",
   "const causes = analyze(events);",
   "function explain(concept) {",
   "  return concept.simplify();",
   "}",
-  "// key insight below ↓",
   "export default lesson;",
-  "const quiz = generateQuiz(data);",
-  "await brain.process(knowledge);",
-  "if (understood) return nextTopic();",
-  "class StudySession {",
-  "  constructor(notes) {",
-  "    this.topics = extract(notes);",
-  "  }",
-  "}",
-  "const recall = spaced(intervals);",
 ];
 
 export const FireshipMode: React.FC<FireshipModeProps> = ({
   segment,
   sceneImages = [],
-  backgroundVideoUrl,
-  backgroundPhotoUrl,
-  scenePhotoUrls = [],
-  cauldronResources,
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
 
-  const scenes = generateSceneData(segment.content, 3.2, segment.keyTerms);
-  const hasSceneImages = sceneImages.length > 0;
+  const scenes = generateSceneData(segment.content, segment.keyTerms, segment.voiceoverTimings);
+  const codeLines = segment.codeSnippet?.code.split('\n') || FALLBACK_CODE;
 
   // Title animations
   const emojiScale = spring({
@@ -74,64 +47,21 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
     [0, 1],
     [-300, 0]
   );
-  const titleEntryOpacity = interpolate(frame, [5, 15], [0, 1], {
-    extrapolateRight: "clamp",
-  });
-  const titleExitOpacity = interpolate(frame, [35, 45], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  const titleOpacity = titleEntryOpacity * titleExitOpacity;
-
-  const badgeOpacity = interpolate(frame, [18, 30], [0, 1], {
-    extrapolateRight: "clamp",
-  });
-
-  // Current scene for images
-  const currentTimeMs = (frame / fps) * 1000;
-  let currentSceneIndex = 0;
-  for (let i = 0; i < scenes.length; i++) {
-    if (currentTimeMs >= scenes[i].startMs) currentSceneIndex = i;
-  }
-
-  const currentSceneImage =
-    hasSceneImages && sceneImages[currentSceneIndex]
-      ? sceneImages[currentSceneIndex]
-      : segment.imageUrl || null;
-
-  const prevSceneIndex = Math.max(0, currentSceneIndex - 1);
-  const prevSceneImage =
-    hasSceneImages && sceneImages[prevSceneIndex]
-      ? sceneImages[prevSceneIndex]
-      : null;
-
-  const sceneStartFrame = Math.round(
-    ((scenes[currentSceneIndex]?.startMs ?? 0) / 1000) * fps
-  );
-  const transitionProgress = interpolate(
-    frame - sceneStartFrame,
-    [0, 10],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-
-  // Key terms timing
-  const keyTermTimings = segment.keyTerms.map((term) => {
-    const pos = segment.content.toLowerCase().indexOf(term.toLowerCase());
-    if (pos < 0) return durationInFrames * 0.6;
-    const wordsBefore = segment.content.slice(0, pos).split(/\s+/).length;
-    const totalWords = segment.content.split(/\s+/).length;
-    const frac = wordsBefore / totalWords;
-    return Math.round(35 + frac * (durationInFrames - 70));
+  
+  // Quick snappy meme pop-in (Fireship style)
+  const memeGif = segment.scoutedMemeUrl;
+  const showMeme = frame > 30 && frame < durationInFrames - 30; // Show in middle
+  // Snap zoom in for meme
+  const memeScale = spring({
+    frame: Math.max(0, frame - 30),
+    fps,
+    config: { damping: 10, stiffness: 300, mass: 0.5 },
   });
 
   // Progress bar
   const progressWidth = interpolate(frame, [0, durationInFrames], [0, 100], {
     extrapolateRight: "clamp",
   });
-
-  // Scrolling code
-  const codeScrollY = -(frame * 0.6) % (CODE_LINES.length * 28);
 
   // Accent glows
   const glow1X = Math.sin(frame / 60) * 25;
@@ -144,47 +74,8 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
         overflow: "hidden",
       }}
     >
-      {/* === Stock video background (dimmed) === */}
-      {backgroundVideoUrl && (
-        <AbsoluteFill style={{ opacity: 0.2 }}>
-          <OffthreadVideo
-            src={backgroundVideoUrl}
-            muted
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        </AbsoluteFill>
-      )}
-
-      {/* === Scene image behind dark overlay === */}
-      {!backgroundVideoUrl && currentSceneImage && (
-        <>
-          {prevSceneImage &&
-            prevSceneImage !== currentSceneImage &&
-            transitionProgress < 1 && (
-              <AbsoluteFill style={{ opacity: (1 - transitionProgress) * 0.35 }}>
-                <img
-                  src={prevSceneImage}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              </AbsoluteFill>
-            )}
-          <AbsoluteFill style={{ opacity: transitionProgress * 0.35 }}>
-            <img
-              src={currentSceneImage}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          </AbsoluteFill>
-        </>
-      )}
-
-      {/* Dark overlay to maintain code editor aesthetic */}
-      <AbsoluteFill
-        style={{
-          background: (backgroundVideoUrl || currentSceneImage)
-            ? "linear-gradient(160deg, rgba(13,17,23,0.75) 0%, rgba(22,27,34,0.8) 40%, rgba(28,35,51,0.85) 100%)"
-            : "transparent",
-        }}
-      />
+      {/* Segment SFX (Cauldron Integration) */}
+      {segment.sfxUrl && <Audio src={segment.sfxUrl} volume={0.6} />}
 
       {/* Grid pattern */}
       <AbsoluteFill
@@ -192,59 +83,6 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
           backgroundImage:
             "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)",
           backgroundSize: "32px 32px",
-        }}
-      />
-
-      {/* Scrolling code background */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: "3%",
-          right: "3%",
-          height: "100%",
-          overflow: "hidden",
-          opacity: 0.05,
-        }}
-      >
-        <div
-          style={{
-            transform: `translateY(${codeScrollY}px)`,
-            fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-            fontSize: 14,
-            lineHeight: "28px",
-            whiteSpace: "pre",
-          }}
-        >
-          {[...CODE_LINES, ...CODE_LINES, ...CODE_LINES].map((line, i) => (
-            <div
-              key={i}
-              style={{
-                color:
-                  i % 3 === 0
-                    ? "#58a6ff"
-                    : i % 3 === 1
-                      ? "#ffa657"
-                      : "#7ee787",
-              }}
-            >
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Accent glows */}
-      <div
-        style={{
-          position: "absolute",
-          top: -100 + glow1Y,
-          right: -100 + glow1X,
-          width: 300,
-          height: 300,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)",
-          filter: "blur(20px)",
         }}
       />
 
@@ -276,33 +114,105 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
             fontFamily: "'SF Mono', monospace",
           }}
         >
-          lesson.ts — NotesTok
+          {segment.codeSnippet?.language ? `lesson.${segment.codeSnippet.language}` : "lesson.ts"} — NotesTok
         </span>
       </div>
 
-      {/* Title section */}
-      {frame < 45 && (
+      {/* Typewriter Code Snippet */}
+      <div
+        style={{
+          position: "absolute",
+          top: "10%",
+          left: "5%",
+          right: "5%",
+          fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontSize: 22,
+          lineHeight: "34px",
+          whiteSpace: "pre-wrap",
+          color: "#e6edf3",
+          zIndex: 2,
+        }}
+      >
+        {codeLines.map((line, lineIndex) => {
+          // Calculate when this line should start typing
+          // Assume 5 frames per character typing speed
+          const charsBeforeThisLine = codeLines.slice(0, lineIndex).join("").length;
+          const lineStartFrame = charsBeforeThisLine * 2;
+          
+          const charsElapsed = Math.max(0, frame - lineStartFrame);
+          const charsToShow = Math.floor(charsElapsed / 2);
+          
+          if (charsToShow <= 0) return null;
+          
+          const text = line.slice(0, Math.min(charsToShow, line.length));
+          const isTyping = charsToShow > 0 && charsToShow < line.length;
+
+          // Syntax highlighting colors based on line index for flare
+          const color = lineIndex % 3 === 0 ? "#58a6ff" : lineIndex % 3 === 1 ? "#ffa657" : "#7ee787";
+
+          return (
+            <div key={lineIndex} style={{ color }}>
+              {text}
+              {isTyping && <span style={{ color: "#fff", opacity: frame % 10 < 5 ? 1 : 0 }}>|</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Accent glows */}
+      <div
+        style={{
+          position: "absolute",
+          top: -100 + glow1Y,
+          right: -100 + glow1X,
+          width: 300,
+          height: 300,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)",
+          filter: "blur(20px)",
+        }}
+      />
+
+      {/* Quick Snappy Meme Pop-In (Bottom Right) */}
+      {memeGif && showMeme && (
         <div
           style={{
             position: "absolute",
-            top: "5%",
-            left: 0,
-            right: 0,
+            bottom: "15%",
+            right: "5%",
+            width: "45%",
+            height: "25%",
+            transform: `scale(${memeScale}) rotate(${Math.sin(frame / 5) * 5}deg)`,
+            border: "4px solid rgba(255,255,255,0.1)",
+            borderRadius: 16,
+            overflow: "hidden",
+            boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+            zIndex: 15,
+          }}
+        >
+          <Video src={memeGif} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        </div>
+      )}
+
+      {/* Title section (Top Left Overlay) */}
+      {frame < 60 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "5%",
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            padding: "0 28px",
-            opacity: titleOpacity,
+            alignItems: "flex-start",
+            opacity: interpolate(frame, [45, 60], [1, 0], { extrapolateRight: "clamp" }),
             zIndex: 5,
           }}
         >
           <span
             style={{
-              fontSize: 52,
+              fontSize: 64,
               transform: `scale(${emojiScale})`,
-              display: "inline-block",
-              marginBottom: 6,
-              filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.3))",
+              filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.5))",
             }}
           >
             {segment.emoji}
@@ -310,114 +220,22 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
           <h2
             style={{
               color: "#e6edf3",
-              fontSize: 26,
+              fontSize: 32,
               fontWeight: 800,
-              textAlign: "center",
               transform: `translateX(${titleSlideX}px)`,
               fontFamily: "system-ui, -apple-system, sans-serif",
-              lineHeight: 1.25,
-              maxWidth: "90%",
-              margin: 0,
+              lineHeight: 1.1,
+              marginTop: 10,
+              textShadow: "0 4px 12px rgba(0,0,0,0.8)",
             }}
           >
             {segment.title}
           </h2>
-          <span
-            style={{
-              marginTop: 8,
-              padding: "4px 12px",
-              borderRadius: 6,
-              backgroundColor:
-                segment.type === "concept"
-                  ? "rgba(88,166,255,0.15)"
-                  : segment.type === "example"
-                    ? "rgba(255,166,87,0.15)"
-                    : "rgba(87,255,166,0.15)",
-              color:
-                segment.type === "concept"
-                  ? "#58a6ff"
-                  : segment.type === "example"
-                    ? "#ffa657"
-                    : "#57ffaa",
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: 1.5,
-              opacity: badgeOpacity,
-              fontFamily: "'SF Mono', monospace",
-            }}
-          >
-            {segment.type}
-          </span>
         </div>
       )}
 
-      {/* Scene-based captions */}
+      {/* Captions */}
       <AnimatedCaptions scenes={scenes} style="fireship" />
-
-      {/* Key terms badges — typewriter animation */}
-      <div
-        style={{
-          position: "absolute",
-          left: "3%",
-          top: "38%",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
-        {segment.keyTerms.map((term, i) => {
-          const termAppearFrame = keyTermTimings[i];
-          const termOpacity =
-            frame >= termAppearFrame
-              ? interpolate(
-                  frame,
-                  [termAppearFrame, termAppearFrame + 8],
-                  [0, 1],
-                  { extrapolateRight: "clamp" }
-                )
-              : 0;
-
-          // Typewriter: reveal characters one at a time
-          const charsElapsed = frame - termAppearFrame;
-          const charsToShow = Math.min(
-            Math.max(0, Math.floor(charsElapsed / 2)),
-            term.length
-          );
-          const displayText = frame >= termAppearFrame
-            ? term.slice(0, charsToShow)
-            : "";
-          const showCursor = frame >= termAppearFrame && charsToShow < term.length;
-
-          return (
-            <span
-              key={term}
-              style={{
-                display: "inline-block",
-                transformOrigin: "left center",
-                opacity: termOpacity,
-                padding: "6px 14px",
-                borderRadius: 8,
-                backgroundColor: "rgba(88,166,255,0.15)",
-                border: "1px solid rgba(88,166,255,0.3)",
-                color: "#58a6ff",
-                fontSize: 16,
-                fontWeight: 700,
-                fontFamily: "'SF Mono', 'Fira Code', monospace",
-                whiteSpace: "nowrap",
-                boxShadow: "0 0 12px rgba(88,166,255,0.15)",
-              }}
-            >
-              {displayText}
-              {showCursor && (
-                <span style={{ opacity: frame % 15 < 8 ? 1 : 0, color: "#79c0ff" }}>
-                  |
-                </span>
-              )}
-            </span>
-          );
-        })}
-      </div>
 
       {/* Progress bar */}
       <div
@@ -425,83 +243,12 @@ export const FireshipMode: React.FC<FireshipModeProps> = ({
           position: "absolute",
           top: 36,
           left: 0,
-          height: 2,
+          height: 3,
           width: `${progressWidth}%`,
-          background: "linear-gradient(90deg, #58a6ff, #79c0ff)",
-          borderRadius: "0 1px 1px 0",
+          background: "linear-gradient(90deg, #58a6ff, #7ee787)",
           zIndex: 10,
-          boxShadow: "0 0 8px rgba(88,166,255,0.4)",
         }}
       />
-
-      {/* === Cauldron Layers (Fireship-styled) === */}
-      {(() => {
-        const sceneResources = cauldronResources?.scenes?.[currentSceneIndex];
-        if (!sceneResources) return null;
-        return (
-          <>
-            <CharacterLayer
-              imageUrl={sceneResources.characterImageUrl}
-              mode="fireship"
-              position="bottom-right"
-              enterFrame={sceneStartFrame + 12}
-            />
-            <GifOverlay
-              gifUrl={sceneResources.gifUrl}
-              position={sceneResources.gifPosition}
-              mode="fireship"
-              showFromFrame={sceneStartFrame + 20}
-              durationFrames={60}
-            />
-            <LottieLayer
-              lottieUrl={sceneResources.lottieUrl}
-              mode="fireship"
-              showFromFrame={sceneStartFrame}
-              durationFrames={30}
-              opacity={0.4}
-            />
-            <StickerBurst
-              stickerUrls={sceneResources.stickerUrls}
-              mode="fireship"
-              showFromFrame={sceneStartFrame + 8}
-              durationFrames={35}
-            />
-            <POVOverlay
-              text={sceneResources.povText}
-              mode="fireship"
-              showFromFrame={0}
-              durationFrames={60}
-            />
-            <MemeTextOverlay
-              topText={sceneResources.memeText?.top}
-              bottomText={sceneResources.memeText?.bottom}
-              mode="fireship"
-              showFromFrame={sceneStartFrame}
-              durationFrames={75}
-            />
-          </>
-        );
-      })()}
-
-      {/* Scene counter */}
-      <div
-        style={{
-          position: "absolute",
-          top: 48,
-          right: "4%",
-          padding: "4px 10px",
-          borderRadius: 6,
-          backgroundColor: "rgba(48,54,61,0.6)",
-          border: "1px solid rgba(48,54,61,0.8)",
-          color: "rgba(230,237,243,0.6)",
-          fontSize: 11,
-          fontWeight: 600,
-          fontFamily: "'SF Mono', monospace",
-          zIndex: 10,
-        }}
-      >
-        {currentSceneIndex + 1}/{scenes.length}
-      </div>
     </AbsoluteFill>
   );
 };

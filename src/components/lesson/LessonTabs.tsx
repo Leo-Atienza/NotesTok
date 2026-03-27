@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LockedInMode } from "@/components/locked-in/LockedInMode";
 import { ProgressDashboard } from "@/components/progression/ProgressDashboard";
+import { GlobalScholarToggle } from "@/components/scholar/GlobalScholarToggle";
 import {
   ArrowLeft,
   Zap,
@@ -28,6 +29,7 @@ import type { LessonManifest, LearnerProfile } from "@/lib/types";
 interface LessonTabsProps {
   manifest: LessonManifest;
   onBack: () => void;
+  onSwitchToPlayer?: () => void;
 }
 
 type TabConfig = { value: string; label: string; icon: React.ReactNode };
@@ -49,12 +51,14 @@ function getTabOrder(profile?: LearnerProfile): { tabs: TabConfig[]; defaultTab:
   }
 }
 
-export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
+export function LessonTabs({ manifest, onBack, onSwitchToPlayer }: LessonTabsProps) {
   const { tabs, defaultTab } = getTabOrder(manifest.learnerProfile);
   const [showBuddy, setShowBuddy] = useState(false);
   const [showLockedIn, setShowLockedIn] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [superDetail, setSuperDetail] = useState(false);
+  const [scholarMode, setScholarMode] = useState(manifest.learnerProfile === "global-scholar");
+  const [activeSegmentIdx, setActiveSegmentIdx] = useState(0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,7 +84,7 @@ export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Super Detail toggle */}
             <button
               onClick={() => setSuperDetail(!superDetail)}
@@ -92,8 +96,12 @@ export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
               title="Toggle super-detailed breakdowns"
             >
               <Microscope className="w-3 h-3" />
-              Detail
+              <span className="hidden sm:inline">Detail</span>
             </button>
+            <GlobalScholarToggle
+              enabled={scholarMode}
+              onToggle={() => setScholarMode(!scholarMode)}
+            />
             <button
               onClick={() => setShowLockedIn(true)}
               className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-muted text-muted-foreground hover:text-foreground border border-transparent transition-colors"
@@ -109,6 +117,16 @@ export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
             >
               <BarChart3 className="w-3 h-3" />
             </button>
+            {onSwitchToPlayer && (
+              <button
+                onClick={onSwitchToPlayer}
+                className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-colors"
+                title="Interactive play mode"
+              >
+                <Play className="w-3 h-3" />
+                <span className="hidden sm:inline">Play</span>
+              </button>
+            )}
             <Badge variant="outline" className="text-xs gap-1">
               <Zap className="w-3 h-3 text-yellow-500" />
               {manifest.totalXP} XP
@@ -134,11 +152,11 @@ export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
           </TabsContent>
 
           <TabsContent value="listen">
-            <ListenView manifest={manifest} />
+            <ListenView manifest={manifest} scholarMode={scholarMode} />
           </TabsContent>
 
           <TabsContent value="cards">
-            <CardsView manifest={manifest} />
+            <CardsView manifest={manifest} superDetail={superDetail} scholarMode={scholarMode} />
           </TabsContent>
 
           <TabsContent value="quiz">
@@ -160,7 +178,7 @@ export function LessonTabs({ manifest, onBack }: LessonTabsProps) {
       {showBuddy && (
         <BuddyChatDrawer
           manifest={manifest}
-          currentSegmentIdx={0}
+          currentSegmentIdx={activeSegmentIdx}
           onClose={() => setShowBuddy(false)}
         />
       )}

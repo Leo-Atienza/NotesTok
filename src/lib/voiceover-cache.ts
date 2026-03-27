@@ -9,24 +9,39 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { getDB, isFirebaseConfigured } from "./firebase";
+import type { VoiceoverTiming } from "./elevenlabs";
 
 const COLLECTION = "voiceover_cache";
 
-/** Simple string hash for cache key (not crypto — just consistent dedup) */
+/**
+ * FNV-1a 64-bit hash (as two 32-bit halves) for cache key.
+ * Much lower collision probability than the original 32-bit djb2.
+ */
 function hashText(text: string): string {
-  let hash = 0;
+  // FNV offset basis and prime for 32-bit (we run two passes with different seeds)
+  let h1 = 0x811c9dc5;
+  let h2 = 0x62b82175; // secondary seed
   for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
+    const c = text.charCodeAt(i);
+    h1 ^= c;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= c;
+    h2 = Math.imul(h2, 0x01000193);
   }
-  // Convert to positive hex string
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return (h1 >>> 0).toString(16).padStart(8, "0") +
+         (h2 >>> 0).toString(16).padStart(8, "0");
+}
+
+export interface CachedVoiceover {
+  audioUrl: string;
+  durationMs: number;
+  wordTimings: VoiceoverTiming[];
 }
 
 export async function getCachedVoiceover(
   text: string,
   voiceId: string
-): Promise<string | null> {
+): Promise<CachedVoiceover | null> {
   if (!isFirebaseConfigured()) return null;
 
   const textHash = hashText(text);
@@ -41,7 +56,12 @@ export async function getCachedVoiceover(
     );
     const snap = await getDocs(q);
     if (snap.empty) return null;
-    return (snap.docs[0].data().audioUrl as string) ?? null;
+    const data = snap.docs[0].data();
+    return {
+      audioUrl: data.audioUrl,
+      durationMs: data.durationMs || 0,
+      wordTimings: (data.wordTimings || []) as VoiceoverTiming[]
+    };
   } catch {
     return null;
   }
@@ -51,7 +71,8 @@ export async function cacheVoiceover(
   text: string,
   voiceId: string,
   audioUrl: string,
-  durationMs: number
+  durationMs: number,
+  wordTimings: VoiceoverTiming[] = []
 ): Promise<void> {
   if (!isFirebaseConfigured()) return;
 
@@ -66,6 +87,7 @@ export async function cacheVoiceover(
       voiceId,
       audioUrl,
       durationMs,
+      wordTimings,
       createdAt: serverTimestamp(),
     });
   } catch {

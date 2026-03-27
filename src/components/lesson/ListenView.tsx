@@ -7,30 +7,44 @@ import {
   SkipForward,
   SkipBack,
   Volume2,
+  Mic,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { LessonManifest } from "@/lib/types";
+import { updateLessonProgress, recordStudySession } from "@/lib/lesson-store";
 
 interface ListenViewProps {
   manifest: LessonManifest;
+  scholarMode?: boolean;
 }
 
-export function ListenView({ manifest }: ListenViewProps) {
+export function ListenView({ manifest, scholarMode = false }: ListenViewProps) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [useTTS, setUseTTS] = useState(true);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const segments = manifest.segments;
   const seg = segments[currentIdx];
+  const hasVoiceover = !!seg.voiceoverUrl;
+
+  // Record study session on mount + track segment views
+  useEffect(() => { recordStudySession(); }, []);
+  useEffect(() => {
+    updateLessonProgress(manifest.id, seg.id);
+  }, [currentIdx, manifest.id, seg.id]);
 
   const stopSpeech = useCallback(() => {
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
     utteranceRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
     setIsPlaying(false);
   }, []);
 
@@ -40,32 +54,78 @@ export function ListenView({ manifest }: ListenViewProps) {
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
+        audioRef.current = null;
+      }
     };
   }, []);
 
-  const speak = useCallback(
-    (text: string) => {
+  // Use scholar content when available and scholar mode is on
+  const getContent = useCallback(
+    (s: typeof seg) => scholarMode && s.scholarContent ? s.scholarContent : s.content,
+    [scholarMode]
+  );
+
+  // Use a ref-based approach to avoid circular useCallback dependencies
+  const playSegmentRef = useRef<(segIndex: number) => void>(() => {});
+
+  const autoAdvance = useCallback(
+    (segIndex: number) => {
+      if (segIndex < segments.length - 1) {
+        const next = segIndex + 1;
+        setCurrentIdx(next);
+        setTimeout(() => playSegmentRef.current(next), 500);
+      }
+    },
+    [segments.length]
+  );
+
+  const playVoiceover = useCallback(
+    (segIndex: number) => {
+      const segment = segments[segIndex];
+      if (!segment.voiceoverUrl) return;
+
+      stopSpeech();
+      setIsPlaying(true);
+
+      const audio = new Audio(segment.voiceoverUrl);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        setIsPlaying(false);
+        autoAdvance(segIndex);
+      };
+
+      audio.onerror = () => {
+        // Fall back to Web Speech
+        setIsPlaying(false);
+        playSegmentRef.current(segIndex);
+      };
+
+      audio.play().catch(() => {
+        setIsPlaying(false);
+      });
+    },
+    [segments, stopSpeech, autoAdvance]
+  );
+
+  const speakTTS = useCallback(
+    (text: string, segIndex: number) => {
       if (typeof window === "undefined" || !window.speechSynthesis) return;
 
       window.speechSynthesis.cancel();
       setIsPlaying(true);
 
       const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 0.95;
+      utt.rate = scholarMode ? 0.85 : 0.95;
       utt.pitch = 1;
 
       utt.onend = () => {
         setIsPlaying(false);
-        // Auto-advance to next segment
-        setCurrentIdx((prev) => {
-          if (prev < segments.length - 1) {
-            const next = prev + 1;
-            // Queue next segment after small delay
-            setTimeout(() => speak(segments[next].content), 500);
-            return next;
-          }
-          return prev;
-        });
+        autoAdvance(segIndex);
       };
 
       utt.onerror = () => {
@@ -75,14 +135,24 @@ export function ListenView({ manifest }: ListenViewProps) {
       utteranceRef.current = utt;
       window.speechSynthesis.speak(utt);
     },
-    [segments]
+    [scholarMode, autoAdvance]
   );
+
+  // Keep the ref updated so auto-advance always uses the latest functions
+  playSegmentRef.current = (segIndex: number) => {
+    const segment = segments[segIndex];
+    if (segment.voiceoverUrl && !scholarMode) {
+      playVoiceover(segIndex);
+    } else {
+      speakTTS(getContent(segment), segIndex);
+    }
+  };
 
   const handlePlayPause = () => {
     if (isPlaying) {
       stopSpeech();
     } else {
-      speak(seg.content);
+      playSegmentRef.current(currentIdx);
     }
   };
 
@@ -129,8 +199,11 @@ export function ListenView({ manifest }: ListenViewProps) {
             {currentIdx + 1}/{segments.length}
           </span>
           <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <Volume2 className="w-3 h-3" />
-            Web Speech
+            {hasVoiceover && !scholarMode ? (
+              <><Mic className="w-3 h-3" /> AI Voice</>
+            ) : (
+              <><Volume2 className="w-3 h-3" /> Web Speech</>
+            )}
           </span>
         </div>
       </div>
@@ -175,7 +248,7 @@ export function ListenView({ manifest }: ListenViewProps) {
 
       {/* Current segment text (scrollable) */}
       <div className="w-full max-w-sm bg-muted/50 rounded-xl p-4 max-h-40 overflow-y-auto">
-        <p className="text-sm leading-relaxed text-muted-foreground">{seg.content}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{getContent(seg)}</p>
       </div>
 
       {/* Segment list */}

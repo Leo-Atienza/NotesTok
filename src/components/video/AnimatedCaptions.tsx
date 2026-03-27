@@ -9,12 +9,12 @@ import {
 } from "remotion";
 import type { Scene } from "./CaptionEngine";
 
-// Pill highlight colors — vibrant, high contrast
-const PILL_COLORS = ["#ef4444", "#22c55e", "#eab308", "#3b82f6", "#ec4899", "#f97316", "#06b6d4"];
+// Brainrot Highlight Colors (Intense neon)
+const PILL_COLORS = ["#ffea00", "#00ff88", "#ff00dd", "#00eeff"];
 
 interface AnimatedCaptionsProps {
   scenes: Scene[];
-  style?: "brainrot" | "fireship";
+  style?: "brainrot" | "fireship" | "aistory" | "whiteboard";
 }
 
 export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
@@ -26,15 +26,15 @@ export const AnimatedCaptions: React.FC<AnimatedCaptionsProps> = ({
   return (
     <AbsoluteFill>
       {scenes.map((scene, sceneIndex) => {
-        const startFrame = Math.round((scene.startMs / 1000) * fps);
-        const durationFrames = Math.round(
+        const startFrame = Math.floor((scene.startMs / 1000) * fps);
+        const durationFrames = Math.ceil(
           ((scene.endMs - scene.startMs) / 1000) * fps
-        );
+        ) + Math.round(fps * 0.5); // hold an extra half second at end of scene
 
         return (
           <Sequence
             key={sceneIndex}
-            from={startFrame}
+            from={Math.max(0, startFrame)}
             durationInFrames={Math.max(durationFrames, 1)}
           >
             <SceneDisplay
@@ -54,7 +54,7 @@ interface SceneDisplayProps {
   scene: Scene;
   sceneIndex: number;
   durationFrames: number;
-  style: "brainrot" | "fireship";
+  style: "brainrot" | "fireship" | "aistory" | "whiteboard";
 }
 
 const SceneDisplay: React.FC<SceneDisplayProps> = ({
@@ -68,131 +68,116 @@ const SceneDisplay: React.FC<SceneDisplayProps> = ({
   const timeMs = (frame / fps) * 1000 + scene.startMs;
 
   const isBrainrot = style === "brainrot";
+  const isAIStory = style === "aistory";
+  const isWhiteboard = style === "whiteboard";
   const words = scene.allWordTimings;
+  if (!words || words.length === 0) return null;
 
-  // Find the currently active word
-  const activeWordIndex = words.findIndex(
-    (wt) => timeMs >= wt.startMs && timeMs < wt.endMs
-  );
-  // If past all words, show the last one (hold phase)
-  const displayIndex = activeWordIndex >= 0 ? activeWordIndex : words.length - 1;
+  // Active Word Detection
+  const activeIndex = words.findIndex((wt) => timeMs >= wt.startMs && timeMs < wt.endMs);
+  const displayIndex = activeIndex >= 0 ? activeIndex : words.length - 1;
   const activeWord = words[displayIndex];
 
-  if (!activeWord) return null;
+  // Group chunks (Karaoke: Show 3 words at a time)
+  // [prevWord, currentWord, nextWord]
+  const currentChunkIndex = Math.floor(displayIndex / 3) * 3;
+  const wordChunk = words.slice(currentChunkIndex, currentChunkIndex + 3);
 
-  // Scene entry/exit fade
-  const entryOpacity = interpolate(frame, [0, 3], [0, 1], {
-    extrapolateRight: "clamp",
-  });
-  const exitStart = Math.max(durationFrames - 3, 1);
-  const exitOpacity = interpolate(frame, [exitStart, durationFrames], [1, 0], {
+  // Scene transitions
+  const exitOpacity = interpolate(frame, [durationFrames - 5, durationFrames], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
-  const combinedOpacity = entryOpacity * exitOpacity;
 
-  // Word entry animation — spring scale
-  const wordLocalFrame = Math.round(((activeWord.startMs - scene.startMs) / 1000) * fps);
+  // Calculate spring bound to the *active word*
+  const activeWordLocalFrame = Math.round(((activeWord.startMs - scene.startMs) / 1000) * fps);
+  
+  // AI Story mode has a softer, more cinematic spring
   const wordProgress = spring({
-    frame: Math.max(0, frame - wordLocalFrame),
+    frame: Math.max(0, frame - activeWordLocalFrame),
     fps,
-    config: { damping: 8, mass: 0.3, stiffness: 280 },
+    config: isAIStory 
+      ? { damping: 15, mass: 0.5, stiffness: 200 } // Softer pop
+      : { damping: 10, mass: 0.2, stiffness: 350 }, // Extremely fast pop
   });
 
-  const wordScale = interpolate(wordProgress, [0, 0.5, 1], [0.3, 1.15, 1]);
-
-  // Subtle shake on active word
-  const shakeX = activeWordIndex >= 0 ? Math.sin(frame * 0.8) * 3 : 0;
-
-  // Color cycling
-  const pillColor = PILL_COLORS[(sceneIndex * 3 + displayIndex) % PILL_COLORS.length];
+  const jumpY = interpolate(wordProgress, [0, 0.4, 1], [0, isAIStory ? -10 : -25, 0]);
+  const activeScale = interpolate(wordProgress, [0, 0.4, 1], [0.9, isAIStory ? 1.15 : 1.3, 1.1]);
 
   return (
-    <AbsoluteFill>
-      {/* Big single word — centered at ~40% from top */}
+    <AbsoluteFill style={{ opacity: exitOpacity }}>
+      {/* Centered Dynamic Captions */}
       <div
         style={{
           position: "absolute",
-          top: "30%",
+          top: isBrainrot ? "38%" : "50%",
           left: 0,
           right: 0,
-          bottom: "30%",
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          opacity: combinedOpacity,
+          flexWrap: "wrap",
+          padding: "0 10%",
+          gap: isBrainrot ? "16px" : "12px",
         }}
       >
-        <span
-          style={{
-            display: "inline-block",
-            transform: `scale(${wordScale}) translateX(${shakeX}px)`,
-            transformOrigin: "center center",
-            // Key terms get colored pill, others get clean white
-            backgroundColor: activeWord.isKeyTerm ? pillColor : "transparent",
-            borderRadius: 16,
-            padding: activeWord.isKeyTerm ? "12px 32px" : "8px 16px",
-            boxShadow: activeWord.isKeyTerm
-              ? `0 0 30px ${pillColor}80, 0 0 60px ${pillColor}40`
-              : "none",
-            // Text
-            color: "#FFFFFF",
-            fontSize: isBrainrot ? 110 : 90,
-            fontWeight: 900,
-            fontFamily: isBrainrot
-              ? "system-ui, -apple-system, 'Segoe UI', sans-serif"
-              : "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-            textTransform: "uppercase",
-            lineHeight: 1.1,
-            letterSpacing: isBrainrot ? "-0.03em" : "0.02em",
-            // Heavy text-stroke for readability over any background
-            textShadow:
-              "4px 4px 0 rgba(0,0,0,1), -4px -4px 0 rgba(0,0,0,1), " +
-              "4px -4px 0 rgba(0,0,0,1), -4px 4px 0 rgba(0,0,0,1), " +
-              "0 0 12px rgba(0,0,0,0.9), 0 6px 16px rgba(0,0,0,0.7)",
-          }}
-        >
-          {activeWord.word}
-        </span>
-      </div>
+        {wordChunk.map((wt, i) => {
+          const isThisWordActive = wt.startMs === activeWord.startMs;
+          const isPassedOrActive = timeMs >= wt.startMs;
 
-      {/* Bottom subtitle — full sentence for context */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: isBrainrot ? "2%" : "4%",
-          left: "3%",
-          right: "3%",
-          display: "flex",
-          justifyContent: "center",
-          opacity: combinedOpacity * 0.95,
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: "rgba(0,0,0,0.75)",
-            borderRadius: 10,
-            padding: "10px 20px",
-            maxWidth: "95%",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <p
-            style={{
-              color: "rgba(255,255,255,0.95)",
-              fontSize: isBrainrot ? 24 : 22,
-              fontWeight: 600,
-              fontFamily: isBrainrot
-                ? "system-ui, -apple-system, sans-serif"
-                : "'SF Mono', 'Fira Code', monospace",
-              lineHeight: 1.5,
-              textAlign: "center",
-              margin: 0,
-            }}
-          >
-            {scene.sentence}
-          </p>
-        </div>
+          // Karaoke color assignment
+          let highlightColor = "#FFFFFF";
+          if (isBrainrot) {
+            highlightColor = wt.isKeyTerm ? PILL_COLORS[0] : PILL_COLORS[1];
+          } else if (isAIStory) {
+            highlightColor = wt.isKeyTerm ? "#ffcc00" : "#ffea00"; // Cinematic yellow
+          } else if (isWhiteboard) {
+            highlightColor = "#111"; // Black sharpie highlight
+          } else {
+            highlightColor = wt.isKeyTerm ? "#58a6ff" : "#00ff88"; // Fireship
+          }
+
+          const color = isThisWordActive ? highlightColor : isPassedOrActive ? (isWhiteboard ? "#111" : "#FFFFFF") : "rgba(128,128,128,0.4)";
+
+          const scale = isThisWordActive ? activeScale : 1;
+          const translateY = isThisWordActive ? jumpY : 0;
+          const rotate = isThisWordActive && isBrainrot ? (i % 2 === 0 ? 3 : -3) : 0;
+
+          return (
+            <div
+              key={i}
+              style={{
+                transform: `scale(${scale}) translateY(${translateY}px) rotate(${rotate}deg)`,
+                color: color,
+                fontSize: isBrainrot ? 80 : isWhiteboard ? 76 : isAIStory ? 72 : 64,
+                fontWeight: 900,
+                fontFamily: isAIStory
+                  ? "'Lora', 'Georgia', serif" // Cinematic serif for AI stories
+                  : isWhiteboard
+                    ? "'Caveat', 'Comic Sans MS', cursive, sans-serif"
+                    : isBrainrot
+                      ? "'Montserrat', 'Arial Black', sans-serif"
+                      : "'Fira Code', 'JetBrains Mono', monospace",
+                textTransform: isBrainrot ? "uppercase" : "none",
+                lineHeight: 1.1,
+                letterSpacing: isBrainrot ? "-0.04em" : "0",
+                display: "inline-block",
+                transformOrigin: "center center",
+                WebkitTextStroke: isBrainrot ? "6px black" : isAIStory ? "3px rgba(0,0,0,0.8)" : "none",
+                textShadow: isBrainrot 
+                  ? "0px 8px 0px rgba(0,0,0,1), 0px 16px 32px rgba(0,0,0,0.8)"
+                  : isAIStory
+                    ? "0px 4px 16px rgba(0,0,0,0.9), 0px 0px 8px rgba(0,0,0,0.8)"
+                    : isWhiteboard
+                      ? "none"
+                      : "0px 4px 12px rgba(0,0,0,0.8)",
+                padding: (isBrainrot || isAIStory || isWhiteboard) ? "4px 8px" : "0",
+              }}
+            >
+              {wt.word}
+            </div>
+          );
+        })}
       </div>
     </AbsoluteFill>
   );
